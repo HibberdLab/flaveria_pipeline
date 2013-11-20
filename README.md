@@ -7,7 +7,7 @@ Four species, two C3 and two C4.
 Flaveria species:
  - Flaveria pringlei
  - Flaveria trinervia
- - ?
+ - Flaveria r...
  - ?
 
 Data contains samples from six sections of leaves from each species with three replicates of each section.
