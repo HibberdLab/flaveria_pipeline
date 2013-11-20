@@ -1,58 +1,65 @@
-task :default => :build
+required_files = {
+  :assembly_output => "assembly.fasta",
+  :quality => "quality_check_output",
+  :input_reads => "input_reads.fastq",
+  :trimmed_reads => "trimmed_reads.fastq",
+  :khmered_reads => "khmered_reads.fastq",
+  :annotation_output => "annotation_summary.csv",
+  :expression_output => "expression_quantification_output.csv"
+}
 
-file "trimmed_reads.fastq" => "input_reads.fastq" do
-  puts "creating trimmed reads..."
-  sh "touch trimmed_reads.fastq"
-end
-
-file "quality_check_output" => "input_reads.fastq" do
+file required_files[:quality] => required_files[:input_reads] do
   puts "running quality check..."
-  sh "touch quality_check_output"
+  sh "touch #{required_files[:quality]}"
 end
 
-file "expression_quantification_output.csv" => "assembly.fasta" do
-  puts "running eXpress with trimmed reads against transcripts"
-  sh "touch expression_quantification_output.csv"
+file required_files[:trimmed_reads] => required_files[:input_reads] do
+  puts "creating trimmed reads..."
+  sh "touch #{required_files[:trimmed_reads]}"
 end
 
-file "assembly.fasta" => "khmered_reads.fastq" do
+file required_files[:assembly_output] => required_files[:khmered_reads] do
   puts "running assemblotron on khmered reads..."
-  sh "touch assembly.fasta"
+  sh "touch #{required_files[:assembly_output]}"
 end
 
-file "khmered_reads.fastq" => "trimmed_reads.fastq" do
+file required_files[:khmered_reads] => required_files[:trimmed_reads] do
   puts "running khmer to reduce coverage of reads..."
-  sh "touch khmered_reads.fastq"
+  sh "touch #{required_files[:khmered_reads]}"
 end
 
-file "annotation_summary.csv" => "assembly.fasta" do
-  puts "running RBUsearch and round-robin to annotate transcripts..."
-  sh "touch annotation_summary.csv"
+file required_files[:expression_output] => required_files[:assembly_output] do
+  puts "running eXpress with trimmed reads against transcripts"
+  sh "touch #{required_files[:expression_output]}"
 end
+
+file required_files[:annotation_output] => required_files[:assembly_output] do
+  if File.size(required_files[:assembly_output]) > 0
+    puts "running RBUsearch and round-robin to annotate transcripts..."
+    sh "touch #{required_files[:annotation_output]}"
+  else
+    abort "ABORT: Something went wrong with #{required_files[:assembly_output]} and the output file is empty!"
+  end
+end
+
+task :default => :build
 
 task :build => [:expression, :annotation]
 
-task :fastqc => "quality_check_output"
+task :fastqc => required_files[:quality]
 
-task :trim => [:fastqc, "trimmed_reads.fastq"]
+task :trim => [:fastqc, required_files[:trimmed_reads]]
 
-task :khmer => [:trim, "khmered_reads.fastq"]
+task :khmer => [:trim, required_files[:khmered_reads]]
 
-task :assemble => [:khmer, "assembly.fasta"]
+task :assemble => [:khmer, required_files[:assembly_output]]
 
-task :annotation => [:assemble, "annotation_summary.csv"]
+task :annotation => [:assemble, required_files[:annotation_output]]
 
-task :expression => [:assemble, "expression_quantification_output.csv"]
+task :expression => [:assemble, required_files[:expression_output]]
 
 task :clean do
-  files = ["trimmed_reads.fastq", 
-    "quality_check_output", 
-    "expression_quantification_output.csv",
-    "annotation_summary.csv",
-    "assembly.fasta",
-    "khmered_reads.fastq",
-    "trimmed_reads.fastq"
-  ]
+  files = required_files.values.delete_if {|a| a=="input_reads.fastq"} # don't delete the input files :P
   files.each do |file|
     if File.exists?(file)
       sh "rm #{file}"

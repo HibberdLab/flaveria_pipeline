@@ -49,8 +49,10 @@ Type `rake`
 
 
 
-
 [1] Paper about optimising trimmomatic cutoff
+
 [2] Paper comparing read error correction methods
+
 [3] Paper about Express
+
 [4] Paper about Sailfish
