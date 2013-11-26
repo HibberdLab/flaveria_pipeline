@@ -4,11 +4,13 @@ flaveria_pipeline
 Pipeline for processing RNAseq data from Flaveria.
 Four species, two C3 and two C4.
 
-Flaveria species:
- - Flaveria pringlei
+Flaveria species - C3:
+ - Flaveria pringlei	
+ - Flaveria robusta
+
+Flaveria species - C4:
  - Flaveria trinervia
- - Flaveria r...
- - ?
+ - Flaveria bidentis
 
 Data contains samples from six sections of leaves from each species with three replicates of each section.
 
@@ -16,14 +18,16 @@ Data contains samples from six sections of leaves from each species with three r
 
 Fastqc
  - Quality checking raw reads
+ - Check for over-represented kmers/sequences.
 
 Trimmomatic
  - Removing adapters?
  - Trimming low quality sequences at the ends of reads. Cutoff set to 10? 15? [1]
 
-Reptile
- - Read error correction using hamming trees
- - Chosen because it came out best in this paper [2]
+Error Correction
+ - Read error correction using hamming trees. 
+ - Reptile initially chosen because it came out best in this paper [2]
+ - BayesHammer then used because Reptile has problems [5]
 
 Khmer
  - preparing reads for assembly
@@ -56,3 +60,5 @@ Type `rake`
 [3] Paper about Express
 
 [4] Paper about Sailfish
+
+[5] Paper about BayesHammer

@@ -1,3 +1,17 @@
 *fasta
 *fastq
 coverage
+*~
+*yaml
+*csv
+*protocol
+*log
+*keep
+*kh
+fastqc_output
+*spades
+trimmed_reads
+single_corrected_reads
+quality_check_output
+corrected_reads
+raw_data
