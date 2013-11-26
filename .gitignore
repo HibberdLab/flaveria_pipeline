@@ -15,3 +15,6 @@ single_corrected_reads
 quality_check_output
 corrected_reads
 raw_data
+assembly_stats
+khmered_reads
+soapdt.config

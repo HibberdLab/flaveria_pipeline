@@ -1,10 +1,13 @@
+require 'bio'
+
 required = {
-  :assembly_output => "assembly.fasta",
+  :assembly_output => "assembly_stats",
   :quality => "quality_check_output",
   :input_reads => "raw_data",
   :trimmed_reads => "trimmed_reads",
   :corrected_reads => "corrected_reads",
   :yaml => "dataset.yaml",
+  :config => "soapdt.config",
   :khmered_reads => "khmered_reads",
   :annotation_output => "annotation_summary.csv",
   :expression_output => "expression_quantification_output.csv"
@@ -12,17 +15,26 @@ required = {
 
 threads = 1
 fastqc_path = "/applications/fastqc_v0.10.1/FastQC/fastqc"
+lcs = ""
 
 task :input do
+  a=[]
   File.open(required[:input_reads], "r").each_line do |line|
     line.chomp!
-    if !File.exists?("#{line}")
+    if File.exists?("#{line}")
+      a << line
+    else
       abort "Can't find #{line}"
     end
   end
+  a.map {|f| f.gsub!(".fastq","")}
+  s = a.min_by(&:size)
+  lcs = catch(:hit) {  s.size.downto(1) { |i| (0..(s.size - i)).each { |l| throw :hit, s[l, i] if a.all? { |item| item.include?(s[l, i]) } } } }
+  # lcs=lcs[0..-2] if lcs[-2]=~/\_\.\,\-/
 end
 
 file required[:quality] => required[:input_reads] do
+  puts "running fastqc reads..."
   if !Dir.exists?("fastqc_output")
     sh "mkdir fastqc_output"
   end
@@ -176,7 +188,7 @@ file required[:corrected_reads] => required[:trimmed_reads] do
 end
 
 file required[:khmered_reads] => required[:corrected_reads] do
-  puts "running khmer to reduce coverage of reads..."
+  # puts "running khmer to reduce coverage of reads..."
   khmer_cmd = "ruby khmer-batch.rb "
   khmer_cmd << "--input #{required[:corrected_reads]} "
   khmer_cmd << "--paired "
@@ -185,12 +197,57 @@ file required[:khmered_reads] => required[:corrected_reads] do
   puts khmer_cmd
   `#{khmer_cmd}`
 
-  #sh "touch #{required[:khmered_reads]}"
+  cmd = "cat "
+  Dir["*keep"].each do |file|
+    cmd << " #{file} "
+  end
+  cmd << " > #{lcs}.fastq"
+  puts cmd
+  `#{cmd}`
+  cmd = "ruby smart_deinterleave.rb -f #{lcs}.fastq -o #{lcs}"
+  puts cmd
+  `#{cmd}`
+  File.open("#{required[:khmered_reads]}", "w") do |out|
+    out.write "#{lcs}.left.fastq\n"
+    out.write "#{lcs}.right.fastq\n"
+  end
+end
+
+file required[:config] do # construct dataset.yaml file for bayeshammer input
+  reads = File.open("#{required[:khmered_reads]}", "r")
+  left = reads.readline.chomp!
+  right = reads.readline.chomp!
+  config = "max_rd_len=20000\n"
+  config << "[LIB]\n"
+  config << "avg_ins=250\n"
+  config << "reverse_seq=0\n"
+  config << "asm_flags=3\n"
+  # config << "rank=2\n"
+  config << "q1=#{left}\n"
+  config << "q2=#{right}\n"
+  File.open("soapdt.config", "w") {|out| out.write config}
 end
 
 file required[:assembly_output] => required[:khmered_reads] do
-  puts "running assemblotron on khmered reads..."
-  sh "touch #{required[:assembly_output]}"
+  puts "running soap on khmered reads..."
+  # output_dir = "#{lcs}_soapdt_output"
+  # if !Dir.exists?(output_dir)
+  #   sh "mkdir #{output_dir}"
+  # end
+  soap_cmd = "SOAPdenovo-Trans-127mer all -s #{required[:config]} -o #{lcs}soap -p #{threads}"
+  sh "#{soap_cmd}"
+  
+  if File.exists?("#{lcs}soap.contig") # soapdtgraph.scafSeq
+    # calculate n50 and stats etc
+    File.open("#{required[:assembly_output]}", "w") do |out|
+      contigs = Bio::FastaFormat.open("#{lcs}soap.contig")
+      contigs.each do |entry|
+        out.write "#{entry.definition} #{entry.seq.length}\n"
+      end
+    end
+  else
+    abort "can't find #{lcs}soap.contig. soap must've failed or something"
+  end
 end
 
 file required[:expression_output] => required[:assembly_output] do
@@ -215,7 +272,9 @@ task :expression => [:assemble, required[:expression_output]]
 
 task :annotation => [:assemble, required[:annotation_output]]
 
-task :assemble => [:khmer, required[:assembly_output]]
+task :assemble => [:khmer, :config, required[:assembly_output]]
+
+task :config => [required[:config]]
 
 task :khmer => [:correct, required[:khmered_reads]]
 
