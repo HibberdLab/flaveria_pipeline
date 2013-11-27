@@ -51,7 +51,7 @@ Differential Expression Analysis
 
 Type `rake`
 
-
+---
 
 [1] Paper about optimising trimmomatic cutoff
 

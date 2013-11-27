@@ -6,6 +6,8 @@ required = {
   :input_reads => "raw_data",
   :trimmed_reads => "trimmed_reads",
   :corrected_reads => "corrected_reads",
+  :hammer_log => "hammer.log",
+  :single_corrected_reads => "single_corrected_reads",
   :yaml => "dataset.yaml",
   :config => "soapdt.config",
   :khmered_reads => "khmered_reads",
@@ -38,28 +40,34 @@ end
 
 file required[:quality] => required[:input_reads] do
   puts "running fastqc reads..."
-  if !Dir.exists?("fastqc_output")
-    sh "mkdir fastqc_output"
+  if !Dir.exists?("#{path}/fastqc_output")
+    sh "mkdir #{path}/fastqc_output"
   end
+
+  input = []
+  File.open("#{required[:input_reads]}", "r").each_line do |line|
+    line.chomp!
+    input << line
+  end
+
   files = ""
-  Dir.chdir("fastqc_output") do
-    File.open("../#{required[:input_reads]}", "r").each_line do |line|
-      line.chomp!
-      fastqc_line = line.split(".")[0..-2].join(".") + "_fastqc"
+  Dir.chdir("#{path}/fastqc_output") do
+    input.each do |file|
+      filename = File.basename(file)
+      fastqc_line = filename.split(".")[0..-2].join(".") + "_fastqc"
       if File.exists?("#{fastqc_line}")
         puts "Found #{fastqc_line}"
       else
         puts "Didn't find #{fastqc_line}"
-        files << " #{line} "
+        files << " #{file} "
       end
     end
   end
 
-  # maybe add a thing here that checks the contents of "fastqc_output" and sees if the fastqc has already been done?
-  sh "#{fastqc_path} --kmers 5 --threads #{threads} --outdir fastqc_output #{files}" if files.length>0
+  sh "#{fastqc_path} --kmers 5 --threads #{threads} --outdir #{path}/fastqc_output #{files}" if files.length>0
   
   fastqc_summary = Hash.new
-  Dir.chdir("fastqc_output") do
+  Dir.chdir("#{path}/fastqc_output") do
     Dir["*fastqc"].each do |fastqc_dir|
       Dir.chdir("#{fastqc_dir}") do
         File.open("fastqc_data.txt", "r").each_line do |line|
@@ -75,6 +83,7 @@ file required[:quality] => required[:input_reads] do
       out.write "#{key}\t#{value}\n"
     end
   end
+  
 end
 
 file required[:trimmed_reads] => required[:input_reads] do
@@ -181,6 +190,7 @@ file required[:corrected_reads] => required[:trimmed_reads] do
       end
     end
   end
+  paired.sort!
   File.open("#{required[:corrected_reads]}", "w") do |out|
     paired.each do |pe|
       out.write "#{path}/output.spades/corrected/#{pe}\n"
@@ -196,10 +206,8 @@ end
 file required[:khmered_reads] => required[:corrected_reads] do
   puts "running khmer to reduce coverage of reads..."
 
-  #get path
-  
-  puts "path = #{path}"
-  puts "lcs = #{lcs}"
+  # puts "path = #{path}"
+  # puts "lcs = #{lcs}"
 
   # run khmer-batch on paired corrected reads
   khmer_cmd = "ruby khmer-batch.rb "
@@ -208,8 +216,8 @@ file required[:khmered_reads] => required[:corrected_reads] do
   khmer_cmd << "--interleave "
   khmer_cmd << "--verbose "
   puts khmer_cmd
-  # `#{khmer_cmd}`
-
+  `#{khmer_cmd}` 
+  
   # cat all the single corrected reads into a single fastq file to run khmer on them
   cat_cmd = "cat "
   corrected_path=""
@@ -220,7 +228,7 @@ file required[:khmered_reads] => required[:corrected_reads] do
   end
   cat_cmd << " > #{path}/#{lcs}.single.fastq"
   puts cat_cmd
-  # `#{cat_cmd}`
+  `#{cat_cmd}`
 
   # cat all the .keep files together from the paired khmer run
   cat_cmd = "cat "
@@ -231,19 +239,19 @@ file required[:khmered_reads] => required[:corrected_reads] do
   end
   cat_cmd << " > #{path}/#{lcs}.khmered.fastq"
   puts cat_cmd
-  # `#{cat_cmd}`
+  `#{cat_cmd}`
 
   # run khmer on the catted single corrected fastq files
   khmer_cmd = "ruby khmer-batch.rb "
   khmer_cmd << "--files #{path}/#{lcs}.single.fastq "
   khmer_cmd << "--verbose "
   puts khmer_cmd
-  # `#{khmer_cmd}`
+  `#{khmer_cmd}`
 
   # deinterleave the output from adds left.fastq and right.fastq to the end of the filename
   cmd = "ruby smart_deinterleave.rb -f #{path}/#{lcs}.khmered.fastq -o #{path}/#{lcs}" 
   puts cmd
-  # `#{cmd}`
+  `#{cmd}`
 
   # write names of files to khmered_reads
   File.open("#{required[:khmered_reads]}", "w") do |out|
@@ -251,8 +259,6 @@ file required[:khmered_reads] => required[:corrected_reads] do
     out.write "#{path}/#{lcs}.right.fastq\n"
     out.write "#{path}/#{lcs}.single.fastq.keep\n"
   end
-
-  exit
 end
 
 file required[:config] do # construct dataset.yaml file for bayeshammer input

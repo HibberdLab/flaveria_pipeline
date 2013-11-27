@@ -87,8 +87,6 @@ end
 check_list(opts.paired, pairedlist) if opts.paired
 check_list(opts.single, singlelist) if opts.single
 
-p singlelist
-
 # build command(s)
 pairedcmd, singlecmd = nil, nil
 
@@ -106,7 +104,7 @@ end
 
 paired_trimlog = []
 unpaired_trimlog = []
-
+inpathf=""
 # trim
 pairedlist.each_slice(2) do |infilef, infiler|
   cmd = pairedcmd
@@ -167,7 +165,7 @@ singlelist.each do |infile|
 end
 
 datestr = Time.now.strftime('%d_%m_%Y_%H_%M_%S')
-protfile = "#{datestr}.trim.protocol"
+protfile = "#{inpathf}/trim.#{datestr}.protocol"
 puts "Saving protocol to #{protfile}"
 File.open(protfile, 'w') do |protocol|
   protocol.puts opts
@@ -185,7 +183,7 @@ def writelog(logarr, logfile)
   end
 end
 
-writelog(paired_trimlog, "paired.#{logsuffix}")
-writelog(unpaired_trimlog, "unpaired.#{logsuffix}")
+writelog(paired_trimlog, "#{inpathf}/paired.#{logsuffix}")
+writelog(unpaired_trimlog, "#{inpathf}/unpaired.#{logsuffix}")
   
 puts "Done! Trimmed #{pairedlist.length + singlelist.length} files in #{Time.now - t0} seconds"
