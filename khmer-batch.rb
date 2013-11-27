@@ -102,28 +102,41 @@ if (opts.paired || opts.interleave)
   pair = "-p"
 end
 
+
 # run
 filelist.each do |file|
   puts "processing: #{file}" if opts.verbose
-  if first
-    cmd = "#{opts.script} #{pair} -k #{opts.kmer} -N #{n} -x #{x} --savehash table.kh #{file}"
-    puts "running: #{cmd}" if opts.verbose
-    puts `#{cmd}` if !opts.test
-    first = false
-  else
-    cmd = "#{opts.script} #{pair} -k #{opts.kmer} -N #{n} -x #{x} --loadhash table.kh --savehash table2.kh #{file}"
-    puts "running #{cmd}" if opts.verbose
-    puts `#{cmd}` if !opts.test
-    `mv table2.kh table.kh` if !opts.test
-  end
-  if opts.cleanup
-    File.delete(file) if !opts.test
-  elsif opts.gzip
-    `gzip #{file}`
-  elsif opts.dsrc
-    puts "compressing #{file}" if opts.verbose
-    `dsrc #{file} #{file}.dsrc` if !opts.test
-    `rm #{file}` if !opts.test
+  filepath = File.dirname(file)
+  filename = File.basename(file)
+  Dir.chdir(filepath) do |dir|
+    puts "changing working directory to #{dir}" if opts.verbose
+    if first
+      cmd = "#{opts.script} #{pair} -k #{opts.kmer} -N #{n} -x #{x} --savehash table.kh #{filename}"
+      puts "running: #{cmd}" if opts.verbose
+      puts `#{cmd}` if !opts.test
+      first = false
+    else
+      cmd = "#{opts.script} #{pair} -k #{opts.kmer} -N #{n} -x #{x} --loadhash table.kh --savehash table2.kh #{file}"
+      puts "running #{cmd}" if opts.verbose
+      #puts `#{cmd}` if !opts.test
+      `mv table2.kh table.kh` if !opts.test
+    end
+    if opts.cleanup
+      File.delete(file) if !opts.test
+    elsif opts.gzip
+      `gzip #{file}`
+    elsif opts.dsrc
+      puts "compressing #{file}" if opts.verbose
+      `dsrc #{file} #{file}.dsrc` if !opts.test
+      `rm #{file}` if !opts.test
+    end
   end
 end
-`rm table.kh`
+
+file = filelist[0]
+filepath = File.dirname(file)
+filename = File.basename(file)
+Dir.chdir(filepath) do |dir|
+  `rm table.kh` if !opts.test
+end
+

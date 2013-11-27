@@ -13,10 +13,10 @@ required = {
   :expression_output => "expression_quantification_output.csv"
 }
 
-threads = 20
+threads = 12
 fastqc_path = "/applications/fastqc_v0.10.1/FastQC/fastqc"
 lcs = ""
-path="./"
+path=""
 
 task :input do
   a=[]
@@ -24,6 +24,7 @@ task :input do
     line.chomp!
     if File.exists?("#{line}")
       a << line
+      path = File.dirname(line)
     else
       abort "Can't find #{line}"
     end
@@ -32,6 +33,7 @@ task :input do
   s = a.min_by(&:size)
   lcs = catch(:hit) {  s.size.downto(1) { |i| (0..(s.size - i)).each { |l| throw :hit, s[l, i] if a.all? { |item| item.include?(s[l, i]) } } } }
   # lcs=lcs[0..-2] if lcs[-2]=~/\_\.\,\-/
+  lcs = File.basename(lcs)
 end
 
 file required[:quality] => required[:input_reads] do
@@ -89,7 +91,7 @@ file required[:trimmed_reads] => required[:input_reads] do
   list_of_trimmed_reads = ""
   File.open("#{required[:input_reads]}", "r").each_line do |line|
     line.chomp!
-    path = File.dirname(line)
+    
     filename = File.basename(line)
     if File.exists?("#{path}/t.#{filename}")
       list_of_trimmed_reads << "#{path}/t.#{filename}\n"
@@ -113,7 +115,7 @@ file required[:yaml] do # construct dataset.yaml file for bayeshammer input
   hash[:single]=[]
   File.open("#{required[:trimmed_reads]}", "r").each_line do |line|
     line.chomp!
-    path = File.dirname(line)
+    
     filename = File.basename(line)
     if filename=~/^t\..*R1.*/
       hash[:left] << line
@@ -192,41 +194,72 @@ file required[:corrected_reads] => required[:trimmed_reads] do
 end
 
 file required[:khmered_reads] => required[:corrected_reads] do
-  # puts "running khmer to reduce coverage of reads..."
+  puts "running khmer to reduce coverage of reads..."
+
+  #get path
+  
+  puts "path = #{path}"
+  puts "lcs = #{lcs}"
+
+  # run khmer-batch on paired corrected reads
   khmer_cmd = "ruby khmer-batch.rb "
   khmer_cmd << "--input #{required[:corrected_reads]} "
   khmer_cmd << "--paired "
   khmer_cmd << "--interleave "
   khmer_cmd << "--verbose "
   puts khmer_cmd
-  `#{khmer_cmd}`
+  # `#{khmer_cmd}`
 
+  # cat all the single corrected reads into a single fastq file to run khmer on them
+  cat_cmd = "cat "
+  corrected_path=""
+  File.open("single_#{required[:corrected_reads]}", "r").each_line do |line|
+    line.chomp!
+    corrected_path = File.dirname(line)
+    cat_cmd << " #{line} "
+  end
+  cat_cmd << " > #{path}/#{lcs}.single.fastq"
+  puts cat_cmd
+  # `#{cat_cmd}`
+
+  # cat all the .keep files together from the paired khmer run
+  cat_cmd = "cat "
+  Dir.chdir(corrected_path) do |dir|
+    Dir["*keep"].each do |file|
+      cat_cmd << " #{corrected_path}/#{file} "
+    end
+  end
+  cat_cmd << " > #{path}/#{lcs}.khmered.fastq"
+  puts cat_cmd
+  # `#{cat_cmd}`
+
+  # run khmer on the catted single corrected fastq files
   khmer_cmd = "ruby khmer-batch.rb "
-  khmer_cmd << "--input single_#{required[:corrected_reads]} "
+  khmer_cmd << "--files #{path}/#{lcs}.single.fastq "
   khmer_cmd << "--verbose "
   puts khmer_cmd
   # `#{khmer_cmd}`
 
-  cmd = "cat "
-  Dir["*keep"].each do |file|
-    cmd << " #{file} "
-  end
-  cmd << " > #{lcs}.fastq"
+  # deinterleave the output from adds left.fastq and right.fastq to the end of the filename
+  cmd = "ruby smart_deinterleave.rb -f #{path}/#{lcs}.khmered.fastq -o #{path}/#{lcs}" 
   puts cmd
-  `#{cmd}`
-  cmd = "ruby smart_deinterleave.rb -f #{lcs}.fastq -o #{lcs}"
-  puts cmd
-  `#{cmd}`
+  # `#{cmd}`
+
+  # write names of files to khmered_reads
   File.open("#{required[:khmered_reads]}", "w") do |out|
-    out.write "#{lcs}.left.fastq\n"
-    out.write "#{lcs}.right.fastq\n"
+    out.write "#{path}/#{lcs}.left.fastq\n"
+    out.write "#{path}/#{lcs}.right.fastq\n"
+    out.write "#{path}/#{lcs}.single.fastq.keep\n"
   end
+
+  exit
 end
 
 file required[:config] do # construct dataset.yaml file for bayeshammer input
   reads = File.open("#{required[:khmered_reads]}", "r")
   left = reads.readline.chomp!
   right = reads.readline.chomp!
+  single = reads.readline.chomp!
   config = "max_rd_len=20000\n"
   config << "[LIB]\n"
   config << "avg_ins=250\n"
@@ -235,25 +268,20 @@ file required[:config] do # construct dataset.yaml file for bayeshammer input
   # config << "rank=2\n"
   config << "q1=#{left}\n"
   config << "q2=#{right}\n"
-  # list_of_single_reads.each do |sng|
-  #   config << "q=#{sng}\n"
-  # end
+  config << "q=#{single}\n"
   File.open("soapdt.config", "w") {|out| out.write config}
 end
 
 file required[:assembly_output] => required[:khmered_reads] do
   puts "running soap on khmered reads..."
-  # output_dir = "#{lcs}_soapdt_output"
-  # if !Dir.exists?(output_dir)
-  #   sh "mkdir #{output_dir}"
-  # end
-  soap_cmd = "SOAPdenovo-Trans-127mer all -s #{required[:config]} -o #{lcs}soap -p #{threads}"
+
+  soap_cmd = "SOAPdenovo-Trans-127mer all -s #{required[:config]} -o #{path}/#{lcs}soap -p #{threads}"
   sh "#{soap_cmd}"
   
-  if File.exists?("#{lcs}soap.contig") # soapdtgraph.scafSeq
+  if File.exists?("#{path}/#{lcs}soap.contig") # soapdtgraph.scafSeq
     # calculate n50 and stats etc
     File.open("#{required[:assembly_output]}", "w") do |out|
-      contigs = Bio::FastaFormat.open("#{lcs}soap.contig")
+      contigs = Bio::FastaFormat.open("#{path}/#{lcs}soap.contig")
       contigs.each do |entry|
         out.write "#{entry.definition} #{entry.seq.length}\n"
       end
