@@ -13,9 +13,10 @@ required = {
   :expression_output => "expression_quantification_output.csv"
 }
 
-threads = 1
+threads = 20
 fastqc_path = "/applications/fastqc_v0.10.1/FastQC/fastqc"
 lcs = ""
+path="./"
 
 task :input do
   a=[]
@@ -88,14 +89,16 @@ file required[:trimmed_reads] => required[:input_reads] do
   list_of_trimmed_reads = ""
   File.open("#{required[:input_reads]}", "r").each_line do |line|
     line.chomp!
-    if File.exists?("t.#{line}")
-      list_of_trimmed_reads << "t.#{line}\n"
+    path = File.dirname(line)
+    filename = File.basename(line)
+    if File.exists?("#{path}/t.#{filename}")
+      list_of_trimmed_reads << "#{path}/t.#{filename}\n"
     end
-    if File.exists?("t.#{line}U")
-      rename =  "mv t.#{line}U tU.#{line}"
+    if File.exists?("#{path}/t.#{filename}U")
+      rename =  "mv #{path}/t.#{filename}U #{path}/tU.#{filename}"
       puts rename
       sh "#{rename}"
-      list_of_trimmed_reads << "tU.#{line}\n"
+      list_of_trimmed_reads << "#{path}/tU.#{filename}\n"
     end
   end
   File.open("#{required[:trimmed_reads]}", "w") do |out|
@@ -110,9 +113,11 @@ file required[:yaml] do # construct dataset.yaml file for bayeshammer input
   hash[:single]=[]
   File.open("#{required[:trimmed_reads]}", "r").each_line do |line|
     line.chomp!
-    if line=~/^t\..*R1.*/
+    path = File.dirname(line)
+    filename = File.basename(line)
+    if filename=~/^t\..*R1.*/
       hash[:left] << line
-    elsif line=~/^t\..*R2.*/
+    elsif filename=~/^t\..*R2.*/
       hash[:right] << line
     else
       hash[:single] << line
@@ -151,25 +156,24 @@ file required[:yaml] do # construct dataset.yaml file for bayeshammer input
   File.open("#{required[:yaml]}", "w") do |out|
     out.write yaml
   end
+
 end
 
 file required[:corrected_reads] => required[:trimmed_reads] do
   puts "running bayeshammer to correct reads..."
   
-  cmd = "python ~/apps/SPAdes-2.5.1-Linux/bin/spades.py --dataset #{required[:yaml]} --only-error-correction --disable-gzip-output -m 90 -t #{threads} -o output.spades"
+  cmd = "python ~/apps/SPAdes-2.5.1-Linux/bin/spades.py --dataset #{required[:yaml]} --only-error-correction --disable-gzip-output -m 90 -t #{threads} -o #{path}/output.spades"
   puts cmd
   hammer_log = `#{cmd}`
   File.open("hammer.log", "w") {|out| out.write hammer_log}
   paired = []
   single = []
-  Dir.chdir("output.spades") do
+  Dir.chdir("#{path}/output.spades") do
     Dir.chdir("corrected") do
       Dir["*fastq"].each do |fastq|
         if fastq =~ /t\..*R[12].*fastq/
-          #paired
           paired << fastq
         elsif fastq =~ /tU.*fastq/
-          #single
           single << fastq
         end
       end
@@ -177,12 +181,12 @@ file required[:corrected_reads] => required[:trimmed_reads] do
   end
   File.open("#{required[:corrected_reads]}", "w") do |out|
     paired.each do |pe|
-      out.write "output.spades/corrected/#{pe}\n"
+      out.write "#{path}/output.spades/corrected/#{pe}\n"
     end
   end
   File.open("single_#{required[:corrected_reads]}", "w") do |out|
     single.each do |sng|
-      out.write "output.spades/corrected/#{sng}\n"
+      out.write "#{path}/output.spades/corrected/#{sng}\n"
     end
   end
 end
@@ -196,6 +200,12 @@ file required[:khmered_reads] => required[:corrected_reads] do
   khmer_cmd << "--verbose "
   puts khmer_cmd
   `#{khmer_cmd}`
+
+  khmer_cmd = "ruby khmer-batch.rb "
+  khmer_cmd << "--input single_#{required[:corrected_reads]} "
+  khmer_cmd << "--verbose "
+  puts khmer_cmd
+  # `#{khmer_cmd}`
 
   cmd = "cat "
   Dir["*keep"].each do |file|
@@ -225,6 +235,9 @@ file required[:config] do # construct dataset.yaml file for bayeshammer input
   # config << "rank=2\n"
   config << "q1=#{left}\n"
   config << "q2=#{right}\n"
+  # list_of_single_reads.each do |sng|
+  #   config << "q=#{sng}\n"
+  # end
   File.open("soapdt.config", "w") {|out| out.write config}
 end
 

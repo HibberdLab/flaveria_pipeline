@@ -33,6 +33,12 @@ qual2 = fastq.readline rescue nil
 
 while name1 != nil and name2 != nil
   if name1.split(":").first == name2.split(":").first
+    if seq1.length!=qual1.length
+      abort "error: seq1.length != qual1.length at #{name1}"
+    end
+    if seq2.length!=qual2.length
+      abort "error: seq2.length != qual2.length at #{name2}"
+    end
     output_left.write(name1)
     output_left.write(seq1)
     output_left.write(plus1)

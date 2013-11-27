@@ -87,7 +87,7 @@ if (opts.interleave)
   end
   filelist = newfilelist
 end
-#exit
+
 # build the command
 first = true
 if (opts.continue)
