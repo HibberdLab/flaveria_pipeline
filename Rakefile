@@ -17,6 +17,8 @@ required = {
 
 threads = 12
 fastqc_path = "/applications/fastqc_v0.10.1/FastQC/fastqc"
+hammer_path = "~/apps/SPAdes-2.5.1-Linux/bin/spades.py"
+trimmomatic_path = "/home/cmb211/apps/Trimmomatic-0.32/trimmomatic-0.32.jar"
 lcs = ""
 path=""
 
@@ -56,9 +58,9 @@ file required[:quality] => required[:input_reads] do
       filename = File.basename(file)
       fastqc_line = filename.split(".")[0..-2].join(".") + "_fastqc"
       if File.exists?("#{fastqc_line}")
-        puts "Found #{fastqc_line}"
+        #puts "Found #{fastqc_line}"
       else
-        puts "Didn't find #{fastqc_line}"
+        #puts "Didn't find #{fastqc_line}"
         files << " #{file} "
       end
     end
@@ -90,7 +92,7 @@ file required[:trimmed_reads] => required[:input_reads] do
   puts "creating trimmed reads..."
 
   trim_batch_cmd = "ruby trim-batch.rb "
-  trim_batch_cmd += "--jar /home/cmb211/apps/Trimmomatic-0.32/trimmomatic-0.32.jar "
+  trim_batch_cmd += "--jar #{trimmomatic_path} "
   trim_batch_cmd += "--pairedfile #{required[:input_reads]} "
   #trim_batch_cmd += "--singlefile #{required[:single_input_reads]} "
   trim_batch_cmd += "--threads #{threads} "
@@ -173,7 +175,7 @@ end
 file required[:corrected_reads] => required[:trimmed_reads] do
   puts "running bayeshammer to correct reads..."
   
-  cmd = "python ~/apps/SPAdes-2.5.1-Linux/bin/spades.py --dataset #{required[:yaml]} --only-error-correction --disable-gzip-output -m 90 -t #{threads} -o #{path}/output.spades"
+  cmd = "python #{hammer_path} --dataset #{required[:yaml]} --only-error-correction --disable-gzip-output -m 90 -t #{threads} -o #{path}/output.spades"
   puts cmd
   hammer_log = `#{cmd}`
   File.open("hammer.log", "w") {|out| out.write hammer_log}
