@@ -18,3 +18,5 @@ raw_data
 assembly_stats
 khmered_reads
 soapdt.config
+bowtie_index
+expression_output

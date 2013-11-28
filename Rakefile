@@ -12,10 +12,12 @@ required = {
   :config => "soapdt.config",
   :khmered_reads => "khmered_reads",
   :annotation_output => "annotation_summary.csv",
-  :expression_output => "expression_quantification_output.csv"
+  :expression_output => "expression_output",
+  :bowtie_index => "bowtie_index"
 }
 
-threads = 12
+threads = 1
+memory = 12
 fastqc_path = "/applications/fastqc_v0.10.1/FastQC/fastqc"
 hammer_path = "~/apps/SPAdes-2.5.1-Linux/bin/spades.py"
 trimmomatic_path = "/home/cmb211/apps/Trimmomatic-0.32/trimmomatic-0.32.jar"
@@ -80,23 +82,26 @@ file required[:quality] => required[:input_reads] do
       end
     end
   end
+  warn=0
   File.open("#{required[:quality]}", "w") do |out|
     fastqc_summary.each_pair do |key, value|
       out.write "#{key}\t#{value}\n"
+      warn+= 1 if value=="warn"
     end
   end
   
+  puts "FastQC: There were #{warn} warnings about overrepresented sequences"
 end
 
 file required[:trimmed_reads] => required[:input_reads] do
   puts "creating trimmed reads..."
 
   trim_batch_cmd = "ruby trim-batch.rb "
-  trim_batch_cmd += "--jar #{trimmomatic_path} "
-  trim_batch_cmd += "--pairedfile #{required[:input_reads]} "
-  #trim_batch_cmd += "--singlefile #{required[:single_input_reads]} "
-  trim_batch_cmd += "--threads #{threads} "
-  trim_batch_cmd += "--quality 15 "
+  trim_batch_cmd << "--jar #{trimmomatic_path} "
+  trim_batch_cmd << "--pairedfile #{required[:input_reads]} "
+  #trim_batch_cmd << "--singlefile #{required[:single_input_reads]} "
+  trim_batch_cmd << "--threads #{threads} "
+  trim_batch_cmd << "--quality 15 "
   # puts trim_batch_cmd
   sh "#{trim_batch_cmd}"
   list_of_trimmed_reads = ""
@@ -108,8 +113,9 @@ file required[:trimmed_reads] => required[:input_reads] do
       list_of_trimmed_reads << "#{path}/t.#{filename}\n"
     end
     if File.exists?("#{path}/t.#{filename}U")
+      # have to rename the files because spades only works with files with known extensions eg fasta, fa, fq, fastq...
       rename =  "mv #{path}/t.#{filename}U #{path}/tU.#{filename}"
-      puts rename
+      # puts rename
       sh "#{rename}"
       list_of_trimmed_reads << "#{path}/tU.#{filename}\n"
     end
@@ -175,10 +181,10 @@ end
 file required[:corrected_reads] => required[:trimmed_reads] do
   puts "running bayeshammer to correct reads..."
   
-  cmd = "python #{hammer_path} --dataset #{required[:yaml]} --only-error-correction --disable-gzip-output -m 90 -t #{threads} -o #{path}/output.spades"
+  cmd = "python #{hammer_path} --dataset #{required[:yaml]} --only-error-correction --disable-gzip-output -m #{memory} -t #{threads} -o #{path}/output.spades"
   puts cmd
   hammer_log = `#{cmd}`
-  File.open("hammer.log", "w") {|out| out.write hammer_log}
+  File.open("hammer.log", "w") {|out| out.write hammer_log} # unnecessary?
   paired = []
   single = []
   Dir.chdir("#{path}/output.spades") do
@@ -264,8 +270,8 @@ file required[:khmered_reads] => required[:corrected_reads] do
 end
 
 file required[:config] do # construct dataset.yaml file for bayeshammer input
-  reads = File.open("#{required[:khmered_reads]}", "r")
-  left = reads.readline.chomp!
+  reads  = File.open("#{required[:khmered_reads]}", "r")
+  left  = reads.readline.chomp!
   right = reads.readline.chomp!
   single = reads.readline.chomp!
   config = "max_rd_len=20000\n"
@@ -299,9 +305,53 @@ file required[:assembly_output] => required[:khmered_reads] do
   end
 end
 
+file required[:bowtie_index] do
+  puts "making bowtie2 index..."
+  # construct a bowtie2 index  
+  index_cmd = "bowtie2-build #{path}/#{lcs}soap.contig #{path}/#{lcs}.index"
+  puts index_cmd
+  sh "#{index_cmd}"
+  File.open("#{required[:bowtie_index]}", "w") {|out| out.write("#{index_cmd}\n")}
+end
+
 file required[:expression_output] => required[:assembly_output] do
   puts "running eXpress with trimmed reads against transcripts"
-  sh "touch #{required[:expression_output]}"
+
+  # construct list of reads to align to transcripts
+  left=[]
+  right=[]
+  single=[] # can you add single reads as well as paired reads to bowtie2? YES
+  File.open("#{required[:trimmed_reads]}").each_line do |line|
+    line.chomp!
+    filename=File.basename(line)
+    filepath=File.dirname(line)
+    if filename=~/^t\..*R1.*fastq/
+      left << line
+    elsif filename=~/^t\..*R2.*fastq/
+      right << line
+    elsif filename=~/^tU\..*fastq/
+      single << line
+    end
+  end
+
+  # run bowtie2 streamed into express
+  # bowtie2 2.1.0 and express 1.5.0 were used to test this
+  express_cmd = "bowtie2 -t -p #{threads} -x #{path}/#{lcs}.index "
+  express_cmd << "-1 #{left.join(",")} "
+  express_cmd << "-2 #{right.join(",")} "
+  express_cmd << "-U #{single.join(",")} "
+  express_cmd << " | express -o #{path} #{path}/#{lcs}soap.contig"
+  puts express_cmd
+  sh "#{express_cmd}"
+
+  count=0
+  File.open("#{path}/results.xprs", "r").each_line do |line|
+    line.chomp!
+    if line.split(/\t+/)[14].to_f > 0
+      count+=1
+    end
+  end
+  File.open("#{required[:expression_output]}", "w") {|out| out.write "#{count} expressed transcripts"}
 end
 
 file required[:annotation_output] => required[:assembly_output] do
@@ -317,7 +367,9 @@ task :default => :build
 
 task :build => [:expression, :annotation]
 
-task :expression => [:assemble, required[:expression_output]]
+task :index => [required[:bowtie_index]]
+
+task :expression => [:assemble, :index, required[:expression_output]]
 
 task :annotation => [:assemble, required[:annotation_output]]
 
@@ -336,7 +388,7 @@ task :trim => [:fastqc, required[:trimmed_reads]]
 task :fastqc => [:input, required[:quality]]
 
 task :clean do
-  files = required.values.delete_if {|a| a=="raw_data"} # don't delete the input files :P
+  files = required.values.delete_if {|a| a=="#{required[:input_reads]}"} # don't delete the input files :P
   files.each do |file|
     if File.exists?(file)
       sh "rm #{file}"
