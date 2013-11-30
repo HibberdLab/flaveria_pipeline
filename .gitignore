@@ -3,6 +3,7 @@
 coverage
 *~
 *yaml
+datasets
 *csv
 *protocol
 *log

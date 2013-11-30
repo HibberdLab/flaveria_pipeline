@@ -8,7 +8,7 @@ required = {
   :corrected_reads => "corrected_reads",
   :hammer_log => "hammer.log",
   :single_corrected_reads => "single_corrected_reads",
-  :yaml => "dataset.yaml",
+  :yaml => "datasets",
   :config => "soapdt.config",
   :khmered_reads => "khmered_reads",
   :annotation_output => "annotation_summary.csv",
@@ -16,8 +16,9 @@ required = {
   :bowtie_index => "bowtie_index"
 }
 
-threads = 1
-memory = 12
+threads = 22
+memory = 90
+maximum_files_to_hammer_at_a_time = 6
 fastqc_path = "/applications/fastqc_v0.10.1/FastQC/fastqc"
 hammer_path = "~/apps/SPAdes-2.5.1-Linux/bin/spades.py"
 trimmomatic_path = "/home/cmb211/apps/Trimmomatic-0.32/trimmomatic-0.32.jar"
@@ -29,17 +30,17 @@ task :input do
   File.open(required[:input_reads], "r").each_line do |line|
     line.chomp!
     if File.exists?("#{line}")
-      a << line
+      a << File.basename(line.gsub(".fastq", ""))
       path = File.dirname(line)
     else
       abort "Can't find #{line}"
     end
   end
-  a.map {|f| f.gsub!(".fastq","")}
   s = a.min_by(&:size)
   lcs = catch(:hit) {  s.size.downto(1) { |i| (0..(s.size - i)).each { |l| throw :hit, s[l, i] if a.all? { |item| item.include?(s[l, i]) } } } }
   # lcs=lcs[0..-2] if lcs[-2]=~/\_\.\,\-/
-  lcs = File.basename(lcs)
+  # lcs = File.basename(lcs)
+  puts "lcs = #{lcs} path=#{path}"
 end
 
 file required[:quality] => required[:input_reads] do
@@ -142,49 +143,78 @@ file required[:yaml] do # construct dataset.yaml file for bayeshammer input
       hash[:single] << line
     end
   end
-  yaml = "[\n"
-  yaml << "  {\n"
-  yaml << "    orientation: \"fr\",\n"
-  yaml << "    type: \"paired-end\",\n"
-  yaml << "    left reads: [\n"
-  hash[:left].each_with_index do |left_read, i|
-    yaml << "      \"#{left_read}\""
-    yaml << "," if i < hash[:left].length-1
-    yaml << "\n"
+  datasets=[]
+  #puts "files = #{hash[:left].length}"
+  #puts "max = #{maximum_files_to_hammer_at_a_time}"
+  #puts (hash[:left].length.to_f / maximum_files_to_hammer_at_a_time.to_f).ceil
+  chunk = (hash[:left].length.to_f / maximum_files_to_hammer_at_a_time.to_f).ceil
+  
+  (1..chunk).each do |i|
+    left=[]
+    right=[]
+    single=[]
+    (1..maximum_files_to_hammer_at_a_time).each do
+      left << hash[:left].shift
+      right << hash[:right].shift
+      single << hash[:single].shift
+      single << hash[:single].shift
+    end
+    yaml = "[\n"
+    yaml << "  {\n"
+    yaml << "    orientation: \"fr\",\n"
+    yaml << "    type: \"paired-end\",\n"
+    yaml << "    left reads: [\n"
+    left.each_with_index do |left_read, i|
+      yaml << "      \"#{left_read}\""
+      yaml << "," if i < left.length-1
+      yaml << "\n"
+    end
+    yaml << "    ],\n"
+    yaml << "    right reads: [\n"
+    right.each_with_index do |right_read, i|
+      yaml << "      \"#{right_read}\""
+      yaml << "," if i < right.length-1
+      yaml << "\n"
+    end
+    yaml << "    ],\n"
+    yaml << "  },\n"
+    yaml << "  {\n"
+    yaml << "    type: \"single\",\n"
+    yaml << "    single reads: [\n"
+    single.each_with_index do |single_read, i|
+      yaml << "      \"#{single_read}\""
+      yaml << "," if i < single.length-1
+      yaml << "\n"
+    end
+    yaml << "    ]\n"
+    yaml << "  }\n"
+    yaml << "]\n"
+    datasets << "dataset_#{i}.yaml"
+    File.open("dataset_#{i}.yaml", "w") do |out|
+      out.write yaml
+    end
+  end # end of chunk
+  File.open("#{required[:yaml]}", "w") do |yaml_out|
+    datasets.each do |yaml_file|
+      yaml_out.write "#{yaml_file}\n" 
+    end
   end
-  yaml << "    ],\n"
-  yaml << "    right reads: [\n"
-  hash[:right].each_with_index do |right_read, i|
-    yaml << "      \"#{right_read}\""
-    yaml << "," if i < hash[:right].length-1
-    yaml << "\n"
-  end
-  yaml << "    ],\n"
-  yaml << "  },\n"
-  yaml << "  {\n"
-  yaml << "    type: \"single\",\n"
-  yaml << "    single reads: [\n"
-  hash[:single].each_with_index do |single_read, i|
-    yaml << "      \"#{single_read}\""
-    yaml << "," if i < hash[:single].length-1
-    yaml << "\n"
-  end
-  yaml << "    ]\n"
-  yaml << "  }\n"
-  yaml << "]\n"
-  File.open("#{required[:yaml]}", "w") do |out|
-    out.write yaml
-  end
-
+  
 end
 
 file required[:corrected_reads] => required[:trimmed_reads] do
   puts "running bayeshammer to correct reads..."
   
-  cmd = "python #{hammer_path} --dataset #{required[:yaml]} --only-error-correction --disable-gzip-output -m #{memory} -t #{threads} -o #{path}/output.spades"
-  puts cmd
-  hammer_log = `#{cmd}`
-  File.open("hammer.log", "w") {|out| out.write hammer_log} # unnecessary?
+  File.open("#{required[:yaml]}", "r").each_line do |dataset_line|
+    puts "running hammer on #{dataset_line}"
+    dataset_line.chomp!
+    cmd = "python #{hammer_path} --dataset #{dataset_line} --only-error-correction --disable-gzip-output -m #{memory} -t #{threads} -o #{path}/output.spades"
+    puts cmd
+    hammer_log = `#{cmd}`
+    hammer_log = "ran bayeshammer on #{dataset_line}\n"
+    File.open("#{path}/hammer_#{dataset_line}.log", "w") {|out| out.write hammer_log}
+  end
+  exit
   paired = []
   single = []
   Dir.chdir("#{path}/output.spades") do
@@ -197,6 +227,9 @@ file required[:corrected_reads] => required[:trimmed_reads] do
         end
       end
     end
+  end
+  if paired.length == 0 and single.length == 0
+    abort "Something went wrong with BayesHammer and no corrected reads were created"
   end
   paired.sort!
   File.open("#{required[:corrected_reads]}", "w") do |out|
@@ -213,9 +246,6 @@ end
 
 file required[:khmered_reads] => required[:corrected_reads] do
   puts "running khmer to reduce coverage of reads..."
-
-  # puts "path = #{path}"
-  # puts "lcs = #{lcs}"
 
   # run khmer-batch on paired corrected reads
   khmer_cmd = "ruby khmer-batch.rb "
@@ -336,11 +366,11 @@ file required[:expression_output] => required[:assembly_output] do
 
   # run bowtie2 streamed into express
   # bowtie2 2.1.0 and express 1.5.0 were used to test this
-  express_cmd = "bowtie2 -t -p #{threads} -x #{path}/#{lcs}.index "
+  express_cmd = "bowtie2 -t -a --very-sensitive -p #{threads} -x #{path}/#{lcs}.index "
   express_cmd << "-1 #{left.join(",")} "
   express_cmd << "-2 #{right.join(",")} "
   express_cmd << "-U #{single.join(",")} "
-  express_cmd << " | express -o #{path} #{path}/#{lcs}soap.contig"
+  express_cmd << " | express --output-align-prob -o #{path} #{path}/#{lcs}soap.contig "
   puts express_cmd
   sh "#{express_cmd}"
 
