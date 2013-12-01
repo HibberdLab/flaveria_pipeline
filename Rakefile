@@ -205,25 +205,31 @@ end
 file required[:corrected_reads] => required[:trimmed_reads] do
   puts "running bayeshammer to correct reads..."
   
+  count=0
+  output_directories=[]
   File.open("#{required[:yaml]}", "r").each_line do |dataset_line|
     puts "running hammer on #{dataset_line}"
     dataset_line.chomp!
-    cmd = "python #{hammer_path} --dataset #{dataset_line} --only-error-correction --disable-gzip-output -m #{memory} -t #{threads} -o #{path}/output.spades"
+    cmd = "python #{hammer_path} --dataset #{dataset_line} --only-error-correction --disable-gzip-output -m #{memory} -t #{threads} -o #{path}/output_#{count}.spades"
+    output_directories << "#{path}/output_#{count}.spades"
     puts cmd
     hammer_log = `#{cmd}`
-    hammer_log = "ran bayeshammer on #{dataset_line}\n"
     File.open("#{path}/hammer_#{dataset_line}.log", "w") {|out| out.write hammer_log}
+    count+=1
   end
-  exit
+
   paired = []
   single = []
-  Dir.chdir("#{path}/output.spades") do
-    Dir.chdir("corrected") do
-      Dir["*fastq"].each do |fastq|
-        if fastq =~ /t\..*R[12].*fastq/
-          paired << fastq
-        elsif fastq =~ /tU.*fastq/
-          single << fastq
+
+  output_directories.each do |dir|
+    Dir.chdir(dir) do
+      Dir.chdir("corrected") do
+        Dir["*fastq"].each do |fastq|
+          if fastq =~ /t\..*R[12].*fastq/
+            paired << "#{path}/#{dir}/corrected/#{fastq}"
+          elsif fastq =~ /tU.*fastq/
+            single << "#{path}/#{dir}/corrected/#{fastq}"
+          end
         end
       end
     end
@@ -234,12 +240,12 @@ file required[:corrected_reads] => required[:trimmed_reads] do
   paired.sort!
   File.open("#{required[:corrected_reads]}", "w") do |out|
     paired.each do |pe|
-      out.write "#{path}/output.spades/corrected/#{pe}\n"
+      out.write "#{pe}\n"
     end
   end
   File.open("single_#{required[:corrected_reads]}", "w") do |out|
     single.each do |sng|
-      out.write "#{path}/output.spades/corrected/#{sng}\n"
+      out.write "#{sng}\n"
     end
   end
 end
