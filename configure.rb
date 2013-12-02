@@ -16,7 +16,10 @@ require 'trollop'
 include Which
 
 fastqc = which "fastqc"
-fastqc = which "spades.py"
-fastqc = which "trimmomatic"
-fastqc = which "normalize-by-median.py"
+spades = which "spades.py"
+trimmomatic = which "trimmomatic"
+khmer = which "normalize-by-median.py"
+
+memory = 90
+threads = 24
 

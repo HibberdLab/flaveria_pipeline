@@ -213,9 +213,11 @@ file required[:corrected_reads] => required[:trimmed_reads] do
     dataset_line.chomp!
     cmd = "python #{hammer_path} --dataset #{dataset_line} --only-error-correction --disable-gzip-output -m #{memory} -t #{threads} -o #{path}/output_#{count}.spades"
     output_directories << "#{path}/output_#{count}.spades"
-    puts cmd
-    hammer_log = `#{cmd}`
-    File.open("#{path}/hammer_#{dataset_line}.log", "w") {|out| out.write hammer_log}
+    if !File.exists("output_#{count}.spades")
+      puts cmd
+      hammer_log = `#{cmd}`
+      File.open("#{path}/hammer_#{dataset_line}.log", "w") {|out| out.write hammer_log}
+    end
     count+=1
   end
 
