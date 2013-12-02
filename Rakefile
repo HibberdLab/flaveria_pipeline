@@ -22,6 +22,7 @@ maximum_files_to_hammer_at_a_time = 6
 fastqc_path = "/applications/fastqc_v0.10.1/FastQC/fastqc"
 hammer_path = "~/apps/SPAdes-2.5.1-Linux/bin/spades.py"
 trimmomatic_path = "/home/cmb211/apps/Trimmomatic-0.32/trimmomatic-0.32.jar"
+khmer_path = "/home/cmb211/.local/bin/normalize-by-median.py"
 lcs = ""
 path=""
 
@@ -164,16 +165,16 @@ file required[:yaml] do # construct dataset.yaml file for bayeshammer input
     yaml << "    orientation: \"fr\",\n"
     yaml << "    type: \"paired-end\",\n"
     yaml << "    left reads: [\n"
-    left.each_with_index do |left_read, i|
+    left.each_with_index do |left_read, j|
       yaml << "      \"#{left_read}\""
-      yaml << "," if i < left.length-1
+      yaml << "," if j < left.length-1
       yaml << "\n"
     end
     yaml << "    ],\n"
     yaml << "    right reads: [\n"
-    right.each_with_index do |right_read, i|
+    right.each_with_index do |right_read, j|
       yaml << "      \"#{right_read}\""
-      yaml << "," if i < right.length-1
+      yaml << "," if j < right_.length-1
       yaml << "\n"
     end
     yaml << "    ],\n"
@@ -181,9 +182,9 @@ file required[:yaml] do # construct dataset.yaml file for bayeshammer input
     yaml << "  {\n"
     yaml << "    type: \"single\",\n"
     yaml << "    single reads: [\n"
-    single.each_with_index do |single_read, i|
+    single.each_with_index do |single_read, j|
       yaml << "      \"#{single_read}\""
-      yaml << "," if i < single.length-1
+      yaml << "," if j < single.length-1
       yaml << "\n"
     end
     yaml << "    ]\n"
@@ -255,6 +256,7 @@ file required[:khmered_reads] => required[:corrected_reads] do
 
   # run khmer-batch on paired corrected reads
   khmer_cmd = "ruby khmer-batch.rb "
+  khmer_cmd << "--script #{khmer_path} "
   khmer_cmd << "--input #{required[:corrected_reads]} "
   khmer_cmd << "--paired "
   khmer_cmd << "--interleave "
