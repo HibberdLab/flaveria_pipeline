@@ -268,17 +268,21 @@ file required[:khmered_reads] => required[:corrected_reads] do
   
   # interleave the corrected fastq files together into #{path} with a .in suffix
   interleaved_files=[]
-  filelist.each do |left, right|
+  filelist.each_slice(2) do |pair|
+    left = pair[0]
+    right = pair[1]
+    puts "interleaving #{File.basename(left)} and #{File.basename(right)}"
     base = File.basename(left)
     cmd = "paste #{left} #{right} | paste - - - - | "
     cmd << " awk -v FS=\"\t\" -v OFS=\"\n\" \'{print(\"@read\"NR\":1\",$3,$5,$7,\"@read\"NR\":2\",$4,$6,$8)}\' > #{path}/#{base}.in"
     if !File.exists?("#{path}/#{base}.in")
       # puts cmd
-      puts "interleaving #{File.basename(left)} and #{File.basename(right)}"
       `#{cmd}`
     end
     interleaved_files << "#{path}/#{base}.in"
   end
+
+  # exit # !!!!!!!!!!!!!!!!!!!!!!!
 
   # settings for khmer
   first = true
