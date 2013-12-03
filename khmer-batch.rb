@@ -37,7 +37,7 @@ end
 
 filelist=[]
 # check inputs
-if (opts.input and opts.files)
+if opts.input and opts.files
   abort "Choose either --input or --files but not both"
 elsif opts.input
   if !File.exists?(opts.input)
@@ -58,7 +58,8 @@ elsif opts.files
   end
 end
 
-if (opts.interleave)
+
+if opts.interleave
   newfilelist=[]
   # check there are an even number of files in the list
   if filelist.length % 2 == 1
@@ -68,19 +69,20 @@ if (opts.interleave)
     #if File.exists?("#{filelist[i]}") and File.exists?("#{filelist[i+1]}")
     puts "Interleaving #{filelist[i]} and #{filelist[i+1]}" if opts.verbose
     cmd = "paste #{filelist[i]} #{filelist[i+1]} | paste - - - - | awk -v FS=\"\t\" -v OFS=\"\n\" \'{print(\"@read\"NR\":1\",$3,$5,$7,\"@read\"NR\":2\",$4,$6,$8)}\' > #{filelist[i]}.in"
-    `#{cmd}`
+    # puts cmd if opts.verbose
+    `#{cmd}` if !opts.test
     if opts.cleanup
       File.delete(filelist[i]) 
       File.delete(filelist[i+1])
     elsif opts.gzip
-      `gzip #{filelist[i]} #{filelist[i+1]}`
+      `gzip #{filelist[i]} #{filelist[i+1]}`  if !opts.test
     elsif opts.dsrc
       puts "compressing #{filelist[i]}" if opts.verbose
-      `dsrc e #{filelist[i]} #{filelist[i]}.dsrc`
+      `dsrc e #{filelist[i]} #{filelist[i]}.dsrc`  if !opts.test
       puts "compressing #{filelist[i+1]}" if opts.verbose
-      `dsrc e #{filelist[i+1]} #{filelist[i+1]}.dsrc`
-      `rm #{filelist[i]}`
-      `rm #{filelist[i+1]}`
+      `dsrc e #{filelist[i+1]} #{filelist[i+1]}.dsrc` if !opts.test
+      `rm #{filelist[i]}` if !opts.test
+      `rm #{filelist[i+1]}` if !opts.test
     end
     newfilelist << "#{filelist[i]}.in"
     #end
@@ -90,7 +92,7 @@ end
 
 # build the command
 first = true
-if (opts.continue)
+if opts.continue
   first = false
 end
 
@@ -98,7 +100,7 @@ n = opts.buckets
 x = (opts.memory/opts.buckets*1e9).to_i
 
 pair=""
-if (opts.paired || opts.interleave)
+if opts.paired or opts.interleave
   pair = "-p"
 end
 
@@ -124,7 +126,7 @@ filelist.each do |file|
     if opts.cleanup
       File.delete(file) if !opts.test
     elsif opts.gzip
-      `gzip #{file}`
+      `gzip #{file}` if !opts.test
     elsif opts.dsrc
       puts "compressing #{file}" if opts.verbose
       `dsrc #{file} #{file}.dsrc` if !opts.test
