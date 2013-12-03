@@ -118,7 +118,7 @@ filelist.each do |file|
       puts `#{cmd}` if !opts.test
       first = false
     else
-      cmd = "#{opts.script} #{pair} -k #{opts.kmer} -N #{n} -x #{x} --loadhash table.kh --savehash table2.kh #{file}"
+      cmd = "#{opts.script} #{pair} -k #{opts.kmer} -N #{n} -x #{x} --loadhash table.kh --savehash table2.kh #{filename}"
       puts "running #{cmd}" if opts.verbose
       puts `#{cmd}` if !opts.test
       `mv table2.kh table.kh` if !opts.test

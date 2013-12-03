@@ -39,7 +39,7 @@ task :input do
   end
   s = a.min_by(&:size)
   lcs = catch(:hit) {  s.size.downto(1) { |i| (0..(s.size - i)).each { |l| throw :hit, s[l, i] if a.all? { |item| item.include?(s[l, i]) } } } }
-  # lcs=lcs[0..-2] if lcs[-2]=~/\_\.\,\-/
+  #lcs=lcs[0..-2] if lcs[-2]=~/\_\.\,\-/
   # lcs = File.basename(lcs)
   # puts "lcs = #{lcs} path=#{path}"
 end
@@ -259,49 +259,78 @@ end
 file required[:khmered_reads] => required[:corrected_reads] do
   puts "running khmer to reduce coverage of reads..."
 
-  # run khmer-batch on paired corrected reads
-  khmer_cmd = "ruby khmer-batch.rb "
-  # khmer_cmd << "--script #{khmer_path} "
-  khmer_cmd << "--input #{required[:corrected_reads]} "
-  khmer_cmd << "--paired "
-  khmer_cmd << "--interleave "
-  khmer_cmd << "--verbose "
-  puts khmer_cmd
-  khmer_log_1 = `#{khmer_cmd}`
-  File.open("#{path}/khmer.1.log", "w") {|out| out.write khmer_log_1}
+  # make a list of the paired corrected reads
+  filelist=[]
+  File.open("#{required[:corrected_reads]}", "r").each_line do |line|
+    line.chomp!
+    filelist << line
+  end
+  
+  # interleave the corrected fastq files together into #{path} with a .in suffix
+  interleaved_files=[]
+  filelist.each do |left, right|
+    base = File.basename(left)
+    cmd = "paste #{left} #{right} | paste - - - - | "
+    cmd << " awk -v FS=\"\t\" -v OFS=\"\n\" \'{print(\"@read\"NR\":1\",$3,$5,$7,\"@read\"NR\":2\",$4,$6,$8)}\' > #{path}/#{base}.in"
+    if !File.exists?("#{path}/#{base}.in")
+      # puts cmd
+      puts "interleaving #{File.basename(left)} and #{File.basename(right)}"
+      `#{cmd}`
+    end
+    interleaved_files << "#{path}/#{base}.in"
+  end
+
+  # settings for khmer
+  first = true
+  kmer_size = 21
+  n = 4
+  khmer_memory = 24
+  x = (khmer_memory/n*1e9).to_i
+
+  # run khmer on the interleaved files and export .keep files into #{path}
+  interleaved_files.each do |file|
+    Dir.chdir(File.dirname(file)) do
+      if first
+        cmd = "#{khmer_path} -p -k #{kmer_size} -N #{n} -x #{x} --savehash table.kh #{file}"
+        puts "#{cmd}"
+        puts `#{cmd}`
+        first = false
+      else
+        cmd = "#{khmer_path} -p -k #{kmer_size} -N #{n} -x #{x} --loadhash table.kh --savehash table2.kh #{file}"
+        puts "#{cmd}"
+        puts `#{cmd}`
+        `mv table2.kh table.kh`
+      end
+    end
+  end
+
+  # cat all the .keep files together from the paired khmer run
+  cat_cmd = "cat "
+  Dir["#{path}/*keep"].each do |file|
+    cat_cmd << "#{file} "
+  end
+  cat_cmd << " > #{path}/#{lcs}.khmered.fastq"
+  # puts cat_cmd
+  `#{cat_cmd}`
 
   # cat all the single corrected reads into a single fastq file to run khmer on them
   cat_cmd = "cat "
   corrected_path=""
   File.open("single_#{required[:corrected_reads]}", "r").each_line do |line|
     line.chomp!
-    cat_cmd << " #{line} "
+    cat_cmd << "#{line} "
   end
   cat_cmd << " > #{path}/#{lcs}.single.fastq"
-  puts cat_cmd
+  # puts cat_cmd
   `#{cat_cmd}`
 
-
-
-  # cat all the .keep files together from the paired khmer run
-  cat_cmd = "cat "
-  Dir.chdir(corrected_path) do |dir|
-    Dir["*keep"].each do |file|
-      cat_cmd << " #{corrected_path}/#{file} "
-    end
+  # run khmer on all the single reads
+  Dir.chdir(path) do
+    cmd = "#{khmer_path} -k #{kmer_size} -N #{n} -x #{x} #{path}/#{lcs}.single.fastq"
+    puts "#{cmd}"
+    puts `#{cmd}`
   end
-  cat_cmd << " > #{path}/#{lcs}.khmered.fastq"
-  puts cat_cmd
-  `#{cat_cmd}`
-
-  # run khmer on the catted single corrected fastq files
-  khmer_cmd = "ruby khmer-batch.rb "
-  khmer_cmd << "--files #{path}/#{lcs}.single.fastq "
-  khmer_cmd << "--verbose "
-  puts khmer_cmd
-  khmer_log_2 = `#{khmer_cmd}`
-  File.open("#{path}/khmer.2.log", "w") {|out| out.write khmer_log_2}
-
+  
   # deinterleave the output from adds left.fastq and right.fastq to the end of the filename
   cmd = "ruby smart_deinterleave.rb -f #{path}/#{lcs}.khmered.fastq -o #{path}/#{lcs}" 
   puts cmd
