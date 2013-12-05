@@ -174,7 +174,7 @@ file required[:yaml] do # construct dataset.yaml file for bayeshammer input
     yaml << "    right reads: [\n"
     right.each_with_index do |right_read, j|
       yaml << "      \"#{right_read}\""
-      yaml << "," if j < right_.length-1
+      yaml << "," if j < right.length-1
       yaml << "\n"
     end
     yaml << "    ],\n"
@@ -215,7 +215,7 @@ file required[:corrected_reads] => required[:trimmed_reads] do
     output_directories << "#{path}/output_#{count}.spades"
     if !File.exists?("#{path}/output_#{count}.spades")
       puts cmd
-      #hammer_log = `#{cmd}`
+      hammer_log = `#{cmd}`
       File.open("#{path}/hammer_#{dataset_line}.log", "w") {|out| out.write hammer_log}
     else
       puts "output_#{count}.spades already exists, not running hammer on this batch."
@@ -282,8 +282,6 @@ file required[:khmered_reads] => required[:corrected_reads] do
     interleaved_files << "#{path}/#{base}.in"
   end
 
-  # exit # !!!!!!!!!!!!!!!!!!!!!!!
-
   # settings for khmer
   first = true
   kmer_size = 21
@@ -334,6 +332,9 @@ file required[:khmered_reads] => required[:corrected_reads] do
     puts "#{cmd}"
     puts `#{cmd}`
   end
+  # remove lcs.single.fastq as it's just a cat of other files and it's big
+  rm_cmd = "rm #{path}/#{lcs}.single.fastq"
+  `#{rm_cmd}`
   
   # deinterleave the output from adds left.fastq and right.fastq to the end of the filename
   cmd = "ruby smart_deinterleave.rb -f #{path}/#{lcs}.khmered.fastq -o #{path}/#{lcs}" 
