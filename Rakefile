@@ -23,6 +23,7 @@ fastqc_path = "/applications/fastqc_v0.10.1/FastQC/fastqc"
 hammer_path = "~/apps/SPAdes-2.5.1-Linux/bin/spades.py"
 trimmomatic_path = "/home/cmb211/apps/Trimmomatic-0.32/trimmomatic-0.32.jar"
 khmer_path = "/home/cmb211/.local/bin/normalize-by-median.py"
+protein_reference = "/home/cmb211/flaveria/at.faa"
 lcs = ""
 path=""
 
@@ -37,6 +38,7 @@ task :input do
       abort "Can't find #{line}"
     end
   end
+  abort "Can't find protein reference for annotation" if !File.exists?(protein_reference)
   s = a.min_by(&:size)
   lcs = catch(:hit) {  s.size.downto(1) { |i| (0..(s.size - i)).each { |l| throw :hit, s[l, i] if a.all? { |item| item.include?(s[l, i]) } } } }
   #lcs=lcs[0..-2] if lcs[-2]=~/\_\.\,\-/
@@ -287,7 +289,7 @@ file required[:khmered_reads] => required[:corrected_reads] do
   first = true
   kmer_size = 21
   n = 4
-  khmer_memory = 24
+  khmer_memory = 48
   x = (khmer_memory/n*1e9).to_i
 
   # run khmer on the interleaved files and export .keep files into #{path}
@@ -388,10 +390,10 @@ end
 
 file required[:bowtie_index] do
   puts "making bowtie2 index..."
-  # construct a bowtie2 index  
-  index_cmd = "bowtie2-build #{path}/#{lcs}soap.contig #{path}/#{lcs}.index"
+  abort "Something went wrong with annotation. Can't find annotated fasta file" if !File.exists?("#{path}/#{lcs}annotated.fasta")
+  index_cmd = "bowtie2-build #{path}/#{lcs}annotated.fasta #{path}/#{lcs}.index"
   puts index_cmd
-  sh "#{index_cmd}"
+  `#{index_cmd}`
   File.open("#{required[:bowtie_index]}", "w") {|out| out.write("#{index_cmd}\n")}
 end
 
@@ -438,6 +440,11 @@ end
 file required[:annotation_output] => required[:assembly_output] do
   if File.size(required[:assembly_output]) > 0
     puts "running RBUsearch and round-robin to annotate transcripts..."
+    cmd = "ruby rbusearch.rb --query #{path}/#{lcs}soap.contig --target #{protein_reference} --output #{path} --cores #{threads} --prefix #{lcs}"
+    puts cmd
+    log = `#{cmd}`
+    File.open("rbusearch.log", "w") {|out| out.write log}
+    
     sh "touch #{required[:annotation_output]}"
   else
     abort "ABORT: Something went wrong with #{required[:assembly_output]} and the output file is empty!"
