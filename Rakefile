@@ -414,37 +414,51 @@ file required[:expression_output] => required[:assembly_output] do
       left[section] << line
     elsif filename=~/^t\..*(.)_(.)_R2\.fastq/
       section = $2
-      right[section] = [] if !left.has_key?(section)
+      right[section] = [] if !right.has_key?(section)
       right[section] << line
     elsif filename=~/^tU\..*(.)_(.)_R1\.fastq/
       section = $2
-      single[section] = [] if !left.has_key?(section)
+      single[section] = [] if !single.has_key?(section)
       single[section] << line
     end
   end
 
+  directories = []
   # run bowtie2 streamed into express
   # bowtie2 2.1.0 and express 1.5.0 were used to test this
   left.keys.each do |section|
     #make an output directory for this section
     mkdir_cmd = "mkdir #{path}/express_#{lcs}#{section}"
-    `#{mkdir_cmd}`
+    puts mkdir_cmd
+    directories << "#{path}/express_#{lcs}#{section}"
+    if !File.exists?("#{path}/express_#{lcs}#{section}")
+      `#{mkdir_cmd}`
+    else
+      puts "directory already exists"
+    end
 
     express_cmd = "bowtie2 -t -a --very-sensitive -p #{threads} -x #{path}/#{lcs}.index "
     express_cmd << "-1 #{left[section].join(",")} "
     express_cmd << "-2 #{right[section].join(",")} "
     express_cmd << "-U #{single[section].join(",")} "
-    express_cmd << " | express --output-align-prob -o #{path}/express_#{lcs}#{section} #{path}/#{lcs}soap.contig "
+    express_cmd << " | express --output-align-prob -o #{path}/express_#{lcs}#{section} "
+    express_cmd << " #{path}/#{lcs}annotated.fasta "
     puts express_cmd
-    #sh "#{express_cmd}"
+    if !File.exists?("#{path}/#{dir}/results.xprs")
+      `#{express_cmd}`
+    else
+      puts "results.xprs already exists for section #{section}"
+    end
 
   end
-  exit
+
   count=0
-  File.open("#{path}/results.xprs", "r").each_line do |line|
-    line.chomp!
-    if line.split(/\t+/)[14].to_f > 0
-      count+=1
+  directories.each do |dir|
+    File.open("#{path}/#{dir}/results.xprs", "r").each_line do |line|
+      line.chomp!
+      if line.split(/\t+/)[14].to_f > 0
+        count+=1
+      end
     end
   end
   File.open("#{required[:expression_output]}", "w") {|out| out.write "#{count} expressed transcripts"}
