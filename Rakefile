@@ -401,32 +401,45 @@ file required[:expression_output] => required[:assembly_output] do
   puts "running eXpress with trimmed reads against transcripts"
 
   # construct list of reads to align to transcripts
-  left=[]
-  right=[]
-  single=[] # can you add single reads as well as paired reads to bowtie2? YES
+  left=Hash.new
+  right=Hash.new
+  single=Hash.new
   File.open("#{required[:trimmed_reads]}").each_line do |line|
     line.chomp!
     filename=File.basename(line)
     filepath=File.dirname(line)
-    if filename=~/^t\..*R1.*fastq/
-      left << line
-    elsif filename=~/^t\..*R2.*fastq/
-      right << line
-    elsif filename=~/^tU\..*fastq/
-      single << line
+    if filename=~/^t\..*(.)_(.)_R1\.fastq/ # $1 = replicate, $2 = section
+      section = $2
+      left[section] = [] if !left.has_key?(section)
+      left[section] << line
+    elsif filename=~/^t\..*(.)_(.)_R2\.fastq/
+      section = $2
+      right[section] = [] if !left.has_key?(section)
+      right[section] << line
+    elsif filename=~/^tU\..*(.)_(.)_R1\.fastq/
+      section = $2
+      single[section] = [] if !left.has_key?(section)
+      single[section] << line
     end
   end
 
   # run bowtie2 streamed into express
   # bowtie2 2.1.0 and express 1.5.0 were used to test this
-  express_cmd = "bowtie2 -t -a --very-sensitive -p #{threads} -x #{path}/#{lcs}.index "
-  express_cmd << "-1 #{left.join(",")} "
-  express_cmd << "-2 #{right.join(",")} "
-  express_cmd << "-U #{single.join(",")} "
-  express_cmd << " | express --output-align-prob -o #{path} #{path}/#{lcs}soap.contig "
-  puts express_cmd
-  sh "#{express_cmd}"
+  left.keys.each do |section|
+    #make an output directory for this section
+    mkdir_cmd = "mkdir #{path}/express_#{lcs}#{section}"
+    `#{mkdir_cmd}`
 
+    express_cmd = "bowtie2 -t -a --very-sensitive -p #{threads} -x #{path}/#{lcs}.index "
+    express_cmd << "-1 #{left[section].join(",")} "
+    express_cmd << "-2 #{right[section].join(",")} "
+    express_cmd << "-U #{single[section].join(",")} "
+    express_cmd << " | express --output-align-prob -o #{path}/express_#{lcs}#{section} #{path}/#{lcs}soap.contig "
+    puts express_cmd
+    #sh "#{express_cmd}"
+
+  end
+  exit
   count=0
   File.open("#{path}/results.xprs", "r").each_line do |line|
     line.chomp!
@@ -440,7 +453,7 @@ end
 file required[:annotation_output] => required[:assembly_output] do
   if File.size(required[:assembly_output]) > 0
     puts "running RBUsearch and round-robin to annotate transcripts..."
-    cmd = "ruby rbusearch.rb --query #{path}/#{lcs}soap.contig --target #{protein_reference} --output #{path} --cores #{threads} --prefix #{lcs}"
+    cmd = "ruby rbusearch.rb --query #{path}/#{lcs}soap.scafSeq --target #{protein_reference} --output #{path} --cores #{threads} --prefix #{lcs}"
     puts cmd
     log = `#{cmd}`
     File.open("rbusearch.log", "w") {|out| out.write log}
