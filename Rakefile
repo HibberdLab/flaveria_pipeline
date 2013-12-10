@@ -444,7 +444,7 @@ file required[:expression_output] => required[:assembly_output] do
     express_cmd << " | express --output-align-prob -o #{path}/express_#{lcs}#{section} "
     express_cmd << " #{path}/#{lcs}annotated.fasta "
     puts express_cmd
-    if !File.exists?("#{path}/#{dir}/results.xprs")
+    if !File.exists?("#{path}/express_#{lcs}#{section}/results.xprs")
       `#{express_cmd}`
     else
       puts "results.xprs already exists for section #{section}"
