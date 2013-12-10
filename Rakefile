@@ -160,6 +160,9 @@ file required[:yaml] do # construct dataset.yaml file for bayeshammer input
       single << hash[:single].shift
       single << hash[:single].shift
     end
+    left = left.delete_if {|x| x==nil }
+    right = right.delete_if {|x| x==nil }
+    single = single.delete_if {|x| x==nil}
     yaml = "[\n"
     yaml << "  {\n"
     yaml << "    orientation: \"fr\",\n"
@@ -200,7 +203,6 @@ file required[:yaml] do # construct dataset.yaml file for bayeshammer input
       yaml_out.write "#{yaml_file}\n" 
     end
   end
-  
 end
 
 file required[:corrected_reads] => required[:trimmed_reads] do
@@ -230,7 +232,9 @@ file required[:corrected_reads] => required[:trimmed_reads] do
   output_directories.each do |dir|
     Dir.chdir(dir) do
       Dir.chdir("corrected") do
-        Dir["*fastq"].each do |fastq|
+        fastq_files = Dir["*fastq"]
+        abort "Something went wrong with BayesHammers and no corrected reads were created in #{dir}" if fastq_files.length ==0
+        fastq_files.each do |fastq|
           if fastq =~ /t\..*R[12].*fastq/
             paired << "#{dir}/corrected/#{fastq}" # #{path}/
           elsif fastq =~ /tU.*fastq/
@@ -239,9 +243,6 @@ file required[:corrected_reads] => required[:trimmed_reads] do
         end
       end
     end
-  end
-  if paired.length == 0 and single.length == 0
-    abort "Something went wrong with BayesHammer and no corrected reads were created"
   end
   paired.sort!
   File.open("#{required[:corrected_reads]}", "w") do |out|
@@ -445,11 +446,11 @@ end
 
 task :default => :build
 
-task :build => [:expression, :annotation]
+task :build => [:expression]
 
 task :index => [required[:bowtie_index]]
 
-task :expression => [:assemble, :index, required[:expression_output]]
+task :expression => [:annotation, :index, required[:expression_output]]
 
 task :annotation => [:assemble, required[:annotation_output]]
 
