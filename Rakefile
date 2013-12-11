@@ -442,7 +442,8 @@ file required[:expression_output] => required[:assembly_output] do
     express_cmd << "-2 #{right[section].join(",")} "
     express_cmd << "-U #{single[section].join(",")} "
     express_cmd << " | express --output-align-prob -o #{path}/express_#{lcs}#{section} "
-    express_cmd << " #{path}/#{lcs}annotated.fasta "
+    express_cmd << " --no-update-check "   # extra batch rounds -B 2 can't do with streaming output
+    express_cmd << " #{path}/#{lcs}annotated.fasta " # fasta file to align reads to
     puts express_cmd
     if !File.exists?("#{path}/express_#{lcs}#{section}/results.xprs")
       `#{express_cmd}`
@@ -454,7 +455,7 @@ file required[:expression_output] => required[:assembly_output] do
 
   count=0
   directories.each do |dir|
-    File.open("#{path}/#{dir}/results.xprs", "r").each_line do |line|
+    File.open("#{dir}/results.xprs", "r").each_line do |line|
       line.chomp!
       if line.split(/\t+/)[14].to_f > 0
         count+=1
