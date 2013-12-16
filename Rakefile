@@ -41,9 +41,8 @@ task :input do
   abort "Can't find protein reference for annotation" if !File.exists?(protein_reference)
   s = a.min_by(&:size)
   lcs = catch(:hit) {  s.size.downto(1) { |i| (0..(s.size - i)).each { |l| throw :hit, s[l, i] if a.all? { |item| item.include?(s[l, i]) } } } }
+  lcs = "out" if lcs.length == 0
   #lcs=lcs[0..-2] if lcs[-2]=~/\_\.\,\-/
-  # lcs = File.basename(lcs)
-  # puts "lcs = #{lcs} path=#{path}"
 end
 
 file required[:quality] => required[:input_reads] do
@@ -99,12 +98,12 @@ end
 
 file required[:trimmed_reads] => required[:input_reads] do
   puts "creating trimmed reads..."
-
+  trim_threads = threads > 4 ? 4 : threads
   trim_batch_cmd = "ruby trim-batch.rb "
   trim_batch_cmd << "--jar #{trimmomatic_path} "
   trim_batch_cmd << "--pairedfile #{required[:input_reads]} "
   #trim_batch_cmd << "--singlefile #{required[:single_input_reads]} "
-  trim_batch_cmd << "--threads #{threads} "
+  trim_batch_cmd << "--threads #{trim_threads} " # due to io limitations this is capped at 4
   trim_batch_cmd << "--quality 15 "
   # puts trim_batch_cmd
   sh "#{trim_batch_cmd}"
@@ -466,17 +465,29 @@ file required[:expression_output] => required[:assembly_output] do
 end
 
 file required[:annotation_output] => required[:assembly_output] do
-  if File.size(required[:assembly_output]) > 0
-    puts "running RBUsearch and round-robin to annotate transcripts..."
-    cmd = "ruby rbusearch.rb --query #{path}/#{lcs}soap.scafSeq --target #{protein_reference} --output #{path} --cores #{threads} --prefix #{lcs}"
-    puts cmd
-    log = `#{cmd}`
-    File.open("rbusearch.log", "w") {|out| out.write log}
-    
-    sh "touch #{required[:annotation_output]}"
-  else
-    abort "ABORT: Something went wrong with #{required[:assembly_output]} and the output file is empty!"
+  abort "ABORT: Something went wrong with #{required[:assembly_output]} and the output file is empty!"  if File.size(required[:assembly_output]) < 10
+  if !File.exists?("#{path}/#{lcs}contigs.fasta")
+    puts "removing short contigs"
+    # remove contigs with length less than  X
+    length_cutoff = 200
+    contigs = Bio::FastaFormat.open("#{path}/#{lcs}soap.contig")
+    File.open("#{path}/#{lcs}contigs.fasta", "w") do |out|
+      contigs.each do |entry|
+        if entry.seq.length >= length_cutoff
+          out.write ">#{entry.definition}\n#{entry.seq}\n"
+        end
+      end
+    end
   end
+  
+  puts "running RBUsearch and round-robin to annotate transcripts..."
+  cmd = "ruby rbusearch.rb --query #{path}/#{lcs}contigs.fasta --target #{protein_reference} --output #{path} --cores #{threads} --prefix #{lcs} --verbose"
+  puts cmd
+  log = `#{cmd}`
+  File.open("rbusearch.log", "w") {|out| out.write log}
+  
+  `touch #{required[:annotation_output]}`
+
 end
 
 task :default => :build
@@ -488,6 +499,8 @@ task :index => [required[:bowtie_index]]
 task :expression => [:annotation, :index, required[:expression_output]]
 
 task :annotation => [:assemble, required[:annotation_output]]
+
+# task :scaffold => [:assemble, required[:scaffold_output]] # TODO [ ]
 
 task :assemble => [:khmer, :config, required[:assembly_output]]
 
