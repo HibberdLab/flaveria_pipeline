@@ -13,10 +13,13 @@ fastqc_output
 *spades
 trimmed_reads
 single_corrected_reads
-quality_check_output
+quality_check
 corrected_reads
-raw_data
+*raw_data*
 assembly_stats
+soap_output
+sga_output
+idba_output
 khmered_reads
 soapdt.config
 bowtie_index

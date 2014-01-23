@@ -47,18 +47,49 @@ opts = Trollop::options do
   opt :output, "Output name", :required => true, :type => String
   # opt :interleaved, "Fastq file of interleaved left and right reads", :type => String
   opt :cores, "Number of cores", :default => 2, :type => :int
-  opt :coverage_filter, "The minimum k-mer coverage for the filter step.", :default => 2, :type => :int
-  opt :merge_overlap, "Overlap parameter used for FM-merge", :default=>55, :type => :int
-  opt :overlap, "Overlap parameter used for the final assembly", :default => 70, :type => :int
-  opt :max_gap_diff, "Turn off collapsing bubbles around indels", :default => 0, :type => :int
-  opt :repeat_resolution, "Parameter for the small repeat resolution algorithm", :default => 10, :type => :int
-  opt :min_pairs, "The number of pairs required to link two contigs into a scaffold", :default => 3, :type => :int
-  opt :min_length, "The minimum length of contigs to include in a scaffold", :default => 200, :type => :int
-  opt :scaffold_tolerance, "Distance estimate tolerance when resolving scaffold sequences", :default =>1, :type => :int
   opt :sga, "Path to sga", :default => "sga", :type => String
-  opt :scaffold, "Attempt to scaffold"
+  # opt :scaffold, "Attempt to scaffold"
   opt :test, "Don't actually run anything"
   opt :verbose, "Turn on verbose output"
+
+  # filter
+  opt :filter_coverage, "The minimum k-mer coverage for the filter step.", :default => 3, :type => :int
+  opt :filter_kmer, "The length of the kmer to use.", :default => 27, :type => :int
+
+  opt :filter_no_dup, "turn off duplicate removal"
+  opt :filter_substring_only, "when removing duplicates, only remove substring sequences, not full-length matches"
+  opt :filter_kmer, "turn off the kmer check"
+  opt :filter_homopolymer, "check reads for hompolymer run length sequencing errors"
+  opt :filter_low_comp, "filter out low complexity reads"
+
+  # fm-merge
+  opt :merge_overlap, "Overlap parameter used for FM-merge", :default=>45, :type => :int
+  
+  # rmdup
+  opt :rmdup_error_rate, "the maximum error rate allowed to consider two sequences identical (default: exact matches required)", :default => 0, :type => :float # -e
+
+  # overlap
+  opt :error_rate, "the maximum error rate allowed to consider two sequences aligned ", :default => 0, :type => :float # -e
+  opt :min_overlap, "minimum overlap required between two reads", :default => 45, :type => :int # -m
+  opt :exhaustive, "output all overlaps, including transitive edges" # yes/no # -x
+  opt :seed_length, "force the seed length to be LEN. By default, the seed length in the overlap step is calculated to guarantee all overlaps with --error-rate differences are found.  This option removes the guarantee but will be (much) faster. As SGA can tolerate some missing edges, this option may be preferable for some data sets.", :type => :int # -l
+
+  # assemble
+  opt :assembly_overlap, "Overlap parameter used for the final assembly", :default => 70, :type => :int 
+  opt :transitive_reduction, "remove transitive edges from the graph. Off by default."
+  opt :max_edges, "limit each vertex to a maximum of N edges. For highly repetitive regions this helps save memory by culling excessive edges around unresolvable repeats", :default => 128, :type =>:int
+  opt :bubble_remove, "perform N bubble removal steps", :default => 3, :type => :int
+  opt :max_diff, "only remove variation if the divergence between sequences is less than F", :default => 0.05, :type => :float
+  opt :max_gap_diff, "Only remove variation if the divergence between sequences when only counting indels is less than this", :default => 0.01, :type => :float
+  opt :max_indel, "do not remove variation that is an indel of length greater than this", :default => 20, :type => :int
+  opt :cut_terminal, "cut off terminal branches in N rounds", :default=> 10, :type => :int
+  opt :min_branch_length, "remove terminal branches only if they are less than LEN bases in length", :default => 150, :type => :int
+  opt :repeat_resolution, "Parameter for the small repeat resolution algorithm", :default => 10, :type => :int
+  
+
+  # opt :min_pairs, "The number of pairs required to link two contigs into a scaffold", :default => 3, :type => :int
+  # opt :min_length, "The minimum length of contigs to include in a scaffold", :default => 200, :type => :int
+  # opt :scaffold_tolerance, "Distance estimate tolerance when resolving scaffold sequences", :default =>1, :type => :int
 end
 
 Trollop::die :left, "must exist" if !File.exist?(opts[:left]) if opts[:left]
@@ -101,15 +132,42 @@ end
 
 if !File.exists?("#{path}/#{paired}.filter.pass.fa")
   banner "FILTER"
-  filter = "#{opts.sga} filter -x #{opts.coverage_filter} -t #{opts.cores} --homopolymer-check --low-complexity-check "
-  filter << " -o #{path}/#{paired}.filter.pass.fa -p #{path}/#{paired} #{path}/#{paired}.fastq"
+  filter = "#{opts.sga} filter "
+  filter << "-t #{opts.cores} "
+  filter << "-p #{path}/#{paired} "
+  filter << "-o #{path}/#{paired}.filter.pass.fa "
+
+  filter << "-x #{opts.filter_coverage} " if opts.filter_coverage
+  filter << "-l #{opts.filter_kmer} " if opts.filter_kmer
+
+  filter << "--no-duplicate-check " if opts.filter_no_dup 
+  filter << "--substring-only " if opts.filter_substring_only 
+  filter << "--no-kmer-check " if opts.filter_kmer 
+  filter << "--homopolymer-check " if opts.filter_homopolymer 
+  filter << "--low-complexity-check " if opts.filter_low_comp
+
+  filter << "#{path}/#{paired}.fastq"
   puts filter
   `#{filter}` if !opts.test
 end
 
+# opt :filter_coverage, "The minimum k-mer coverage for the filter step.", :default => 3, :type => :int
+# opt :filter_kmer, "The length of the kmer to use.", :default => 27, :type => :int
+
+# opt :filter_no_dup, "turn off duplicate removal"
+# opt :filter_substring_only, "when removing duplicates, only remove substring sequences, not full-length matches"
+# opt :filter_kmer, "turn off the kmer check"
+# opt :filter_homopolymer, "check reads for hompolymer run length sequencing errors"
+# opt :filter_low_comp, "filter out low complexity reads"
+
 if !File.exists?("#{path}/#{paired}.merged.fa")
   banner "FM MERGE"
-  fm_merge = "#{opts.sga} fm-merge -m #{opts.merge_overlap} -t #{opts.cores} -p #{path}/#{paired}.filter.pass -o #{path}/#{paired}.merged.fa #{path}/#{paired}.filter.pass.fa"
+  fm_merge = "#{opts.sga} fm-merge "
+  fm_merge << "-m #{opts.merge_overlap} " if opts.merge_overlap
+  fm_merge << "-t #{opts.cores} "
+  fm_merge << "-p #{path}/#{paired}.filter.pass "
+  fm_merge << "-o #{path}/#{paired}.merged.fa "
+  fm_merge << "#{path}/#{paired}.filter.pass.fa"
   puts fm_merge
   `#{fm_merge}` if !opts.test
 end
@@ -123,21 +181,43 @@ end
 
 if !File.exists?("#{path}/#{paired}.merged.rmdup.fa") # Fb_sga.merged.rmdup.fa
   banner "REMOVE DUPLICATES"
-  rm_dup = "#{opts.sga} rmdup -t #{opts.cores} -o #{path}/#{paired}.merged.rmdup.fa #{path}/#{paired}.merged.fa"
+  rm_dup = "#{opts.sga} rmdup "
+  rm_dup << "-t #{opts.cores} "
+  rm_dup << "-e #{opts.rmdup_error_rate} " if opts.rmdup_error_rate
+  rm_dup << "-o #{path}/#{paired}.merged.rmdup.fa "
+  rm_dup << " #{path}/#{paired}.merged.fa "
   puts rm_dup
   `#{rm_dup}` if !opts.test
 end
 
 if !File.exists?("#{path}/#{paired}.merged.rmdup.asqg.gz")
   banner "OVERLAP"
-  overlap = "#{opts.sga} overlap -m #{opts.merge_overlap} -t #{opts.cores} #{path}/#{paired}.merged.rmdup.fa"
+  overlap = "#{opts.sga} overlap "
+  overlap << "-t #{opts.cores} "
+  overlap << "-e #{opts.error_rate}" if opts.error_rate
+  overlap << "-m #{opts.min_overlap} " if opts.min_overlap
+  overlap << "-x " if opts.exhaustive
+  overlap << "-l #{opts.seed_length}" if opts.seed_length
+  overlap << " #{path}/#{paired}.merged.rmdup.fa"
   puts overlap
   `#{overlap}` if !opts.test
 end
 
 if !File.exists?("#{path}/#{paired}.assemble-contigs.fa")
   banner "ASSEMBLE"
-  assemble = "#{opts.sga} assemble -m #{opts.overlap} -g #{opts.max_gap_diff} -r #{opts.repeat_resolution} -o #{path}/#{paired}.assemble #{path}/#{paired}.merged.rmdup.asqg.gz"
+  assemble = "#{opts.sga} assemble "
+  assemble << "-m #{opts.assembly_overlap} " if opts.assembly_overlap
+  assemble << "--transitive-reduction " if opts.transitive_reduction
+  assemble << "--max-edges #{opts.max_edges}" if opts.max_edges
+  assemble << "-b #{opts.bubble_remove} " if opts.bubble_remove
+  assemble << "-d #{opts.max_diff} " if opts.max_diff
+  assemble << "-g #{opts.max_gap_diff} " if opts.max_gap_diff
+  assemble << "--max-indel=#{opts.max_indel} " if opts.max_indel
+  assemble << "-x #{opts.cut_terminal} " if opts.cut_terminal
+  assemble << "-l #{opts.min_branch_length} " if opts.min_branch_length
+  assemble << "-r #{opts.repeat_resolution} " if opts.repeat_resolution
+  assemble << "-o #{path}/#{paired}.assemble " # output
+  assemble << "#{path}/#{paired}.merged.rmdup.asqg.gz" # input
   puts assemble
   `#{assemble}` if !opts.test
 end

@@ -1,8 +1,11 @@
 require 'bio'
 
 required = {
-  :assembly_output => "assembly_stats",
-  :quality => "quality_check_output",
+  :combined_assembly => "combined_assembly",
+  :soap_output => "soap_output",
+  :sga_output => "sga_output",
+  :idba_output => "idba_output",
+  :quality => "quality_check",
   :input_reads => "raw_data",
   :trimmed_reads => "trimmed_reads",
   :corrected_reads => "corrected_reads",
@@ -11,7 +14,7 @@ required = {
   :yaml => "datasets",
   :config => "soapdt.config",
   :khmered_reads => "khmered_reads",
-  :annotation_output => "annotation_summary.csv",
+  :annotation_output => "annotation_summary",
   :expression_output => "expression_output",
   :bowtie_index => "bowtie_index"
 }
@@ -24,10 +27,13 @@ hammer_path = "~/apps/SPAdes-2.5.1-Linux/bin/spades.py"
 trimmomatic_path = "/home/cmb211/apps/Trimmomatic-0.32/trimmomatic-0.32.jar"
 khmer_path = "/home/cmb211/.local/bin/normalize-by-median.py"
 protein_reference = "/home/cmb211/flaveria/at.faa"
+idba = "/home/cmb211/apps/idba_tran-1.0.13/bin/idba_tran"
+cd_hit_est = "/home/cmb211/apps/cd-hit-v4.6.1-2012-08-27/cd-hit-est"
 lcs = ""
-path=""
+path = ""
 
 task :input do
+  puts "checking input"
   a=[]
   File.open(required[:input_reads], "r").each_line do |line|
     line.chomp!
@@ -48,7 +54,7 @@ end
 file required[:quality] => required[:input_reads] do
   puts "running fastqc reads..."
   if !Dir.exists?("#{path}/fastqc_output")
-    sh "mkdir #{path}/fastqc_output"
+    `mkdir #{path}/fastqc_output`
   end
 
   input = []
@@ -70,8 +76,9 @@ file required[:quality] => required[:input_reads] do
       end
     end
   end
-
-  sh "#{fastqc_path} --kmers 5 --threads #{threads} --outdir #{path}/fastqc_output #{files}" if files.length>0
+  
+  quality_threads = threads > 5 ? 5 : threads # limits to 5 threads due to io
+  `#{fastqc_path} --kmers 5 --threads #{quality_threads} --outdir #{path}/fastqc_output #{files}` if files.length>0
   
   fastqc_summary = Hash.new
   Dir.chdir("#{path}/fastqc_output") do
@@ -106,7 +113,7 @@ file required[:trimmed_reads] => required[:input_reads] do
   trim_batch_cmd << "--threads #{trim_threads} " # due to io limitations this is capped at 4
   trim_batch_cmd << "--quality 15 "
   # puts trim_batch_cmd
-  sh "#{trim_batch_cmd}"
+  `#{trim_batch_cmd}`
   list_of_trimmed_reads = ""
   File.open("#{required[:input_reads]}", "r").each_line do |line|
     line.chomp!
@@ -119,7 +126,7 @@ file required[:trimmed_reads] => required[:input_reads] do
       # have to rename the files because spades only works with files with known extensions eg fasta, fa, fq, fastq...
       rename =  "mv #{path}/t.#{filename}U #{path}/tU.#{filename}"
       # puts rename
-      sh "#{rename}"
+      `#{rename}`
       list_of_trimmed_reads << "#{path}/tU.#{filename}\n"
     end
   end
@@ -234,7 +241,7 @@ file required[:corrected_reads] => required[:trimmed_reads] do
     Dir.chdir(dir) do
       Dir.chdir("corrected") do
         fastq_files = Dir["*fastq"]
-        abort "Something went wrong with BayesHammers and no corrected reads were created in #{dir}" if fastq_files.length ==0
+        abort "Something went wrong with BayesHammer and no corrected reads were created in #{dir}" if fastq_files.length ==0
         fastq_files.each do |fastq|
           if fastq =~ /t\..*R[12].*fastq/
             paired << "#{dir}/corrected/#{fastq}" # #{path}/
@@ -286,21 +293,22 @@ file required[:khmered_reads] => required[:corrected_reads] do
 
   # settings for khmer
   first = true
-  kmer_size = 21
+  kmer_size = 23
   n = 4
   khmer_memory = 48
+  cutoff = 20
   x = (khmer_memory/n*1e9).to_i
 
   # run khmer on the interleaved files and export .keep files into #{path}
   interleaved_files.each do |file|
     Dir.chdir(File.dirname(file)) do
       if first
-        cmd = "#{khmer_path} -p -k #{kmer_size} -N #{n} -x #{x} --savehash table.kh #{file}"
+        cmd = "#{khmer_path} -p -k #{kmer_size} -C #{cutoff} -N #{n} -x #{x} --savehash table.kh #{file}"
         puts "#{cmd}"
         puts `#{cmd}`
         first = false
       else
-        cmd = "#{khmer_path} -p -k #{kmer_size} -N #{n} -x #{x} --loadhash table.kh --savehash table2.kh #{file}"
+        cmd = "#{khmer_path} -p -k #{kmer_size} -C #{cutoff} -N #{n} -x #{x} --loadhash table.kh --savehash table2.kh #{file}"
         puts "#{cmd}"
         puts `#{cmd}`
         `mv table2.kh table.kh`
@@ -368,23 +376,170 @@ file required[:config] do # construct dataset.yaml file for bayeshammer input
   File.open("soapdt.config", "w") {|out| out.write config}
 end
 
-file required[:assembly_output] => required[:khmered_reads] do
+file required[:soap_output] => required[:khmered_reads] do
   puts "running soap on khmered reads..."
 
-  soap_cmd = "SOAPdenovo-Trans-127mer all -s #{required[:config]} -o #{path}/#{lcs}soap -p #{threads}"
-  sh "#{soap_cmd}"
-  
-  if File.exists?("#{path}/#{lcs}soap.contig") # soapdtgraph.scafSeq
-    # calculate n50 and stats etc
-    File.open("#{required[:assembly_output]}", "w") do |out|
-      contigs = Bio::FastaFormat.open("#{path}/#{lcs}soap.contig")
-      contigs.each do |entry|
-        out.write "#{entry.definition} #{entry.seq.length}\n"
+  if !Dir.exists?("#{path}/soap")
+    mkdir_cmd = "mkdir #{path}/soap"
+    `#{mkdir_cmd}`
+  end
+
+  soap_cmd = "SOAPdenovo-Trans-127mer all -s #{required[:config]} -o #{path}/soap/#{lcs}soap -p #{threads}"
+  puts soap_cmd
+  `#{soap_cmd}`
+  # if File.exists?("#{path}/soap/#{lcs}soap.scafSeq") # if soap seg faulted try running without the single reads
+  #   cmd = "grep -v \"q=\" #{required[:config]} > tmp"
+  #   puts cmd
+  #   cmd2 = "mv tmp #{required[:config]}"
+  #   puts cmd2
+  #   # then run soap_cmd again
+  #   `#{soap_cmd}`
+  #   abort "running soap again without the single reads because it seg faulted... :("
+  # end
+
+  # make a histogram of the lengths of the contigs in the output assembly file
+  #
+  if File.exists?("#{path}/soap/#{lcs}soap.scafSeq") # soapdtgraph.scafSeq
+    abort "soap assembly file is empty!" if File.zero?("#{path}/soap/#{lcs}soap.scafSeq")
+    contigs = Bio::FastaFormat.open("#{path}/soap/#{lcs}soap.scafSeq")
+    histogram = {}
+    contigs.each do |entry|
+      bucket = (entry.seq.length*0.01).round
+      if !histogram.has_key?(bucket)
+        histogram[bucket]=0
+      end
+      histogram[bucket]+=1
+    end
+    File.open("#{required[:soap_output]}", "w") do |out|
+      keys = histogram.keys.sort
+      keys.each do |key|
+        out.write "#{100*key}\t#{histogram[key]}\n"
       end
     end
   else
-    abort "can't find #{lcs}soap.contig. soap must've failed or something"
+    abort "couldn't find soap output file"
   end
+end
+
+file required[:sga_output] => required[:khmered_reads] do
+  puts "running sga on khmered reads..."
+
+  if !Dir.exists?("#{path}/sga")
+    mkdir_cmd = "mkdir #{path}/sga"
+    `#{mkdir_cmd}`
+  end
+
+  files = File.readlines("#{required[:khmered_reads]}").map{|n| n.chomp!}.compact
+  left = files[0]
+  right = files[1]
+  sga_cmd = "ruby sga.rb --verbose --left #{left} --right #{right} --output #{path}/sga/#{lcs}sga --cores #{threads}"
+  puts sga_cmd
+  `#{sga_cmd}`
+
+  # make a histogram of the lengths of the contigs in the output assembly file
+  #
+  if File.exists?("#{path}/sga/#{lcs}sga.assemble-contigs.fa") # Fb_sga.assemble-contigs.fa
+    abort "sga assembly file is empty!" if File.zero?("#{path}/sga/#{lcs}sga.assemble-contigs.fa")
+    contigs = Bio::FastaFormat.open("#{path}/sga/#{lcs}sga.assemble-contigs.fa")
+    histogram = {}
+    contigs.each do |entry|
+      bucket = (entry.seq.length*0.01).round
+      if !histogram.has_key?(bucket)
+        histogram[bucket]=0
+      end
+      histogram[bucket]+=1
+    end
+    File.open("#{required[:sga_output]}", "w") do |out|
+      keys = histogram.keys.sort
+      keys.each do |key|
+        out.write "#{100*key}\t#{histogram[key]}\n"
+      end
+    end
+  else
+    abort "can't find #{path}/sga/#{lcs}sga.assemble-contigs.fa. sga must've failed"
+  end
+end
+
+file required[:idba_output] => required[:khmered_reads] do
+  puts "running idba trans on khmered reads..."
+
+  if !Dir.exists?("#{path}/idba")
+    mkdir_cmd = "mkdir #{path}/idba"
+    `#{mkdir_cmd}`
+  end
+
+  # prepare reads
+  if !File.exists?("#{path}/idba/#{lcs}.fx.fa")
+    files = File.readlines("#{required[:khmered_reads]}").map{|n| n.chomp!}.compact
+    fasta = File.open("#{path}/idba/#{lcs}.fx.fa", "w")
+    files.each do |file|
+      fastq = File.open("#{file}", "r")
+      header = fastq.readline
+      seq = fastq.readline
+      plus = fastq.readline
+      qual = fastq.readline
+      while header != nil
+        fasta.write(">#{header}")
+        fasta.write("#{seq}")
+        header = fastq.readline rescue nil
+        seq = fastq.readline rescue nil
+        plus = fastq.readline rescue nil
+        qual = fastq.readline rescue nil
+      end
+    end
+  end
+
+  idba_cmd = "#{idba} -o #{path}/idba -r #{path}/idba/#{lcs}.fx.fa --mink 21 --maxk 77 --step 4 --min_count 1 --no_correct --max_isoforms 6"
+  # idba_cmd = "#{idba} -o #{path}/idba -r #{path}/idba/#{lcs}.fx.fa --mink 21 --maxk 61 --step 20 --min_count 1 --no_correct --max_isoforms 6"
+  puts idba_cmd
+  `#{idba_cmd}`
+
+  # rm_cmd = "rm #{path}/#{lcs}.fx.fa"
+  # `#{rm_cmd}`
+
+  if File.exists?("#{path}/idba/contig.fa") # soapdtgraph.scafSeq
+    abort "idba assembly file is empty!" if File.zero?("#{path}/idba/contig.fa")
+    contigs = Bio::FastaFormat.open("#{path}/idba/contig.fa")
+    histogram = {}
+    contigs.each do |entry|
+      bucket = (entry.seq.length*0.01).round
+      if !histogram.has_key?(bucket)
+        histogram[bucket]=0
+      end
+      histogram[bucket]+=1
+    end
+    File.open("#{required[:idba_output]}", "w") do |out|
+      keys = histogram.keys.sort
+      keys.each do |key|
+        out.write "#{100*key}\t#{histogram[key]}\n"
+      end
+    end
+  else
+    abort "couldn't find idba output file contig"
+  end
+
+end
+
+file required[:combined_assembly] do
+  puts "combining outputs from soap, sga and idba and running cd-hit-est"
+
+  soap = "#{path}/soap/#{lcs}soap.scafSeq"
+  sga = "#{path}/sga/#{lcs}sga.assemble-contigs.fa"
+  idba = "#{path}/idba/contig.fa"
+
+  # concatenate all the output assemblies together
+  cat_cmd = "cat #{soap} #{sga} #{idba} > #{path}/#{lcs}combined_contigs.fa"
+  puts cat_cmd
+  `#{cat_cmd}`
+
+  # run cd-hit-est
+  cd_cmd = "#{cd_hit_est} -i #{path}/#{lcs}combined_contigs.fa -o #{path}/#{lcs}cd_hit.fasta -T #{threads} -c 0.99 -M 5000"
+  puts cd_cmd
+  `#{cd_cmd}`
+
+  output = "#{path}/#{lcs}cd_hit.fasta"
+  File.open("#{required[:combined_assembly]}", "w") {|io| io.write output}
+  # abort "stopping in combining assembly files"
 end
 
 file required[:bowtie_index] do
@@ -396,7 +551,7 @@ file required[:bowtie_index] do
   File.open("#{required[:bowtie_index]}", "w") {|out| out.write("#{index_cmd}\n")}
 end
 
-file required[:expression_output] => required[:assembly_output] do
+file required[:expression_output] => required[:annotation_output] do
   puts "running eXpress with trimmed reads against transcripts"
 
   # construct list of reads to align to transcripts
@@ -408,23 +563,29 @@ file required[:expression_output] => required[:assembly_output] do
     filename=File.basename(line)
     filepath=File.dirname(line)
     if filename=~/^t\..*(.)_(.)_R1\.fastq/ # $1 = replicate, $2 = section
+      replicate = $1
       section = $2
-      left[section] = [] if !left.has_key?(section)
-      left[section] << line
+      key = "#{section}-#{repliace}".to_sym
+      left[key] = [] if !left.has_key?(key)
+      left[key] << line
     elsif filename=~/^t\..*(.)_(.)_R2\.fastq/
+      replicate = $1
       section = $2
-      right[section] = [] if !right.has_key?(section)
-      right[section] << line
+      key = "#{section}-#{repliace}".to_sym
+      right[key] = [] if !right.has_key?(key)
+      right[key] << line
     elsif filename=~/^tU\..*(.)_(.)_R1\.fastq/
+      replicate = $1
       section = $2
-      single[section] = [] if !single.has_key?(section)
-      single[section] << line
+      key = "#{section}-#{repliace}".to_sym
+      single[key] = [] if !single.has_key?(key)
+      single[key] << line
     end
   end
 
   directories = []
   # run bowtie2 streamed into express
-  # bowtie2 2.1.0 and express 1.5.0 were used to test this
+  # bowtie2 2.1.0 and express 1.5.1 were used to test this
   left.keys.each do |section|
     #make an output directory for this section
     mkdir_cmd = "mkdir #{path}/express_#{lcs}#{section}"
@@ -449,7 +610,6 @@ file required[:expression_output] => required[:assembly_output] do
     else
       puts "results.xprs already exists for section #{section}"
     end
-
   end
 
   count=0
@@ -461,38 +621,52 @@ file required[:expression_output] => required[:assembly_output] do
       end
     end
   end
+  #
+  # TODO 
+  # make a summary of the expression counts of the annotated genes in one file
+  # eg
+  # AT1G01010.1   1.2e2   2.4e2   3.6e2   3.7e2   3.8e2   3.8e2
+  # ...
+  #
   File.open("#{required[:expression_output]}", "w") {|out| out.write "#{count} expressed transcripts"}
 end
 
-file required[:annotation_output] => required[:assembly_output] do
-  abort "ABORT: Something went wrong with #{required[:assembly_output]} and the output file is empty!"  if File.size(required[:assembly_output]) < 10
+file required[:annotation_output] => required[:combined_assembly] do
+  abort "ABORT: Something went wrong with #{required[:combined_assembly]} and the output file is empty!"  if File.size(required[:combined_assembly]) < 10
+  puts "running RBUsearch to annotate transcripts..."
   if !File.exists?("#{path}/#{lcs}contigs.fasta")
     puts "removing short contigs"
     # remove contigs with length less than  X
-    length_cutoff = 200
-    contigs = Bio::FastaFormat.open("#{path}/#{lcs}soap.contig")
+    length_cutoff = 179
+    count=0
+    contigs = Bio::FastaFormat.open("#{path}/#{lcs}cd_hit.fasta")
     File.open("#{path}/#{lcs}contigs.fasta", "w") do |out|
       contigs.each do |entry|
         if entry.seq.length >= length_cutoff
-          out.write ">#{entry.definition}\n#{entry.seq}\n"
+          name = "contig_#{count}"
+          out.write ">#{name}\n#{entry.seq}\n"
+          count+=1
         end
       end
     end
   end
   
-  puts "running RBUsearch and round-robin to annotate transcripts..."
-  cmd = "ruby rbusearch.rb --query #{path}/#{lcs}contigs.fasta --target #{protein_reference} --output #{path} --cores #{threads} --prefix #{lcs} --verbose"
+  cmd = "ruby rbusearch.rb --query #{path}/#{lcs}contigs.fasta --target #{protein_reference} --output #{path}/rbusearch --cores #{threads} --prefix #{lcs} --verbose"
   puts cmd
   log = `#{cmd}`
-  File.open("rbusearch.log", "w") {|out| out.write log}
-  
-  `touch #{required[:annotation_output]}`
+  File.open("#{path}/rbusearch.log", "w") {|out| out.write log}
 
+  cmd = "mv #{path}/rbusearch/#{lcs}annotated.fasta #{path}/#{lcs}annotated.fasta"
+  `#{cmd}`
+
+  cmd = "cp #{path}/rbusearch/reciprocal_hits.txt #{required[:annotation_output]}"
+  `#{cmd}`
 end
 
 task :default => :build
 
-task :build => [:expression]
+# task :build => [:expression]
+task :build => [:annotation]
 
 task :index => [required[:bowtie_index]]
 
@@ -502,7 +676,15 @@ task :annotation => [:assemble, required[:annotation_output]]
 
 # task :scaffold => [:assemble, required[:scaffold_output]] # TODO [ ]
 
-task :assemble => [:khmer, :config, required[:assembly_output]]
+task :assemble => [:khmer, :soap, :sga, :idba, :combine]
+
+task :combine => [required[:combined_assembly]]
+
+task :idba => [required[:idba_output]]
+
+task :sga => [required[:sga_output]]
+
+task :soap => [:config, required[:soap_output]]
 
 task :config => [required[:config]]
 
@@ -520,8 +702,12 @@ task :clean do
   files = required.values.delete_if {|a| a=="#{required[:input_reads]}"} # don't delete the input files :P
   files.each do |file|
     if File.exists?(file)
-      sh "rm #{file}"
+      `rm #{file}`
     end
   end
+  `rm dataset*yaml`
 end
 
+task :test do
+   
+end

@@ -48,7 +48,7 @@ while name1 != nil and name2 != nil
     output_right.write(plus2)
     output_right.write(qual2)
   else
-    abort "Houston we have a problem"
+    abort "We have a problem"
   end
 
   name1 = fastq.readline rescue nil
