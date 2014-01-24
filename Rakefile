@@ -218,12 +218,25 @@ file required[:corrected_reads] => required[:trimmed_reads] do
   
   count=0
   output_directories=[]
+
+  write_hammer_to_tmp = true
+  if write_hammer_to_tmp
+    node=`hostname`
+    if node=~/node9/
+      hammer_out_path = "/disk2/tmp/cmb211" # node9 tmp cd /disk2/tmp/cmb211
+    elsif node=~/node8/
+      hammer_out_path = "/tmp/cmb211" # node8 tmp
+    end
+  else
+    hammer_out_path = path
+  end
+  puts "hammer path = #{hammer_out_path}"
   File.open("#{required[:yaml]}", "r").each_line do |dataset_line|
     puts "running hammer on #{dataset_line}"
     dataset_line.chomp!
-    cmd = "python #{hammer_path} --dataset #{dataset_line} --only-error-correction --disable-gzip-output -m #{memory} -t #{threads} -o #{path}/output_#{count}.spades"
-    output_directories << "#{path}/output_#{count}.spades"
-    if !File.exists?("#{path}/output_#{count}.spades")
+    cmd = "python #{hammer_path} --dataset #{dataset_line} --only-error-correction --disable-gzip-output -m #{memory} -t #{threads} -o #{hammer_out_path}/output_#{count}.spades"
+    output_directories << "#{hammer_out_path}/output_#{count}.spades"
+    if !File.exists?("#{hammer_out_path}/output_#{count}.spades")
       puts cmd
       hammer_log = `#{cmd}`
       File.open("#{path}/hammer_#{dataset_line}.log", "w") {|out| out.write hammer_log}
@@ -272,6 +285,7 @@ file required[:khmered_reads] => required[:corrected_reads] do
   filelist=[]
   File.open("#{required[:corrected_reads]}", "r").each_line do |line|
     line.chomp!
+    abort "couldn't find file" if !File.exists?(line)
     filelist << line
   end
   
@@ -489,8 +503,19 @@ file required[:idba_output] => required[:khmered_reads] do
     end
   end
 
-  idba_cmd = "#{idba} -o #{path}/idba -r #{path}/idba/#{lcs}.fx.fa --mink 21 --maxk 77 --step 4 --min_count 1 --no_correct --max_isoforms 6"
-  # idba_cmd = "#{idba} -o #{path}/idba -r #{path}/idba/#{lcs}.fx.fa --mink 21 --maxk 61 --step 20 --min_count 1 --no_correct --max_isoforms 6"
+  idba_cmd = "#{idba} "
+  idba_cmd << "-o #{path}/idba "
+  idba_cmd << "-r #{path}/idba/#{lcs}.fx.fa "
+  idba_cmd << "--num_threads #{threads} "           # number of threads
+  idba_cmd << "--mink 21 "                          # minimum k value (<=124)
+  idba_cmd << "--maxk 77 "                          # maximum k value (<=124)
+  idba_cmd << "--step 4 "                           # increment of k-mer of each iteration
+  idba_cmd << "--min_count 1 "                      # minimum multiplicity for filtering k-mer when building the graph
+  idba_cmd << "--no_correct "                       # do not do correction
+  idba_cmd << "--max_isoforms 6"                    # maximum number of isoforms
+  idba_cmd << "--similar 0.95"                      # similarity for alignment
+
+
   puts idba_cmd
   `#{idba_cmd}`
 
@@ -706,6 +731,7 @@ task :clean do
     end
   end
   `rm dataset*yaml`
+  `rm datasets`
 end
 
 task :test do

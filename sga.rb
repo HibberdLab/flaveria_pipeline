@@ -54,7 +54,7 @@ opts = Trollop::options do
 
   # filter
   opt :filter_coverage, "The minimum k-mer coverage for the filter step.", :default => 3, :type => :int
-  opt :filter_kmer, "The length of the kmer to use.", :default => 27, :type => :int
+  opt :filter_kmer_length, "The length of the kmer to use.", :default => 27, :type => :int
 
   opt :filter_no_dup, "turn off duplicate removal"
   opt :filter_substring_only, "when removing duplicates, only remove substring sequences, not full-length matches"
@@ -66,10 +66,10 @@ opts = Trollop::options do
   opt :merge_overlap, "Overlap parameter used for FM-merge", :default=>45, :type => :int
   
   # rmdup
-  opt :rmdup_error_rate, "the maximum error rate allowed to consider two sequences identical (default: exact matches required)", :default => 0, :type => :float # -e
+  opt :rmdup_error_rate, "the maximum error rate allowed to consider two sequences identical (default: exact matches required)", :default => 0.0, :type => :float # -e
 
   # overlap
-  opt :error_rate, "the maximum error rate allowed to consider two sequences aligned ", :default => 0, :type => :float # -e
+  opt :error_rate, "the maximum error rate allowed to consider two sequences aligned ", :default => 0.0, :type => :float # -e
   opt :min_overlap, "minimum overlap required between two reads", :default => 45, :type => :int # -m
   opt :exhaustive, "output all overlaps, including transitive edges" # yes/no # -x
   opt :seed_length, "force the seed length to be LEN. By default, the seed length in the overlap step is calculated to guarantee all overlaps with --error-rate differences are found.  This option removes the guarantee but will be (much) faster. As SGA can tolerate some missing edges, this option may be preferable for some data sets.", :type => :int # -l
@@ -86,7 +86,7 @@ opts = Trollop::options do
   opt :min_branch_length, "remove terminal branches only if they are less than LEN bases in length", :default => 150, :type => :int
   opt :repeat_resolution, "Parameter for the small repeat resolution algorithm", :default => 10, :type => :int
   
-
+  # scaffolding
   # opt :min_pairs, "The number of pairs required to link two contigs into a scaffold", :default => 3, :type => :int
   # opt :min_length, "The minimum length of contigs to include in a scaffold", :default => 200, :type => :int
   # opt :scaffold_tolerance, "Distance estimate tolerance when resolving scaffold sequences", :default =>1, :type => :int
@@ -138,7 +138,7 @@ if !File.exists?("#{path}/#{paired}.filter.pass.fa")
   filter << "-o #{path}/#{paired}.filter.pass.fa "
 
   filter << "-x #{opts.filter_coverage} " if opts.filter_coverage
-  filter << "-l #{opts.filter_kmer} " if opts.filter_kmer
+  filter << "-k #{opts.filter_kmer_length} " if opts.filter_kmer_length
 
   filter << "--no-duplicate-check " if opts.filter_no_dup 
   filter << "--substring-only " if opts.filter_substring_only 
@@ -194,10 +194,10 @@ if !File.exists?("#{path}/#{paired}.merged.rmdup.asqg.gz")
   banner "OVERLAP"
   overlap = "#{opts.sga} overlap "
   overlap << "-t #{opts.cores} "
-  overlap << "-e #{opts.error_rate}" if opts.error_rate
+  overlap << "-e #{opts.error_rate} " if opts.error_rate
   overlap << "-m #{opts.min_overlap} " if opts.min_overlap
   overlap << "-x " if opts.exhaustive
-  overlap << "-l #{opts.seed_length}" if opts.seed_length
+  overlap << "-l #{opts.seed_length} " if opts.seed_length
   overlap << " #{path}/#{paired}.merged.rmdup.fa"
   puts overlap
   `#{overlap}` if !opts.test
@@ -208,7 +208,7 @@ if !File.exists?("#{path}/#{paired}.assemble-contigs.fa")
   assemble = "#{opts.sga} assemble "
   assemble << "-m #{opts.assembly_overlap} " if opts.assembly_overlap
   assemble << "--transitive-reduction " if opts.transitive_reduction
-  assemble << "--max-edges #{opts.max_edges}" if opts.max_edges
+  assemble << "--max-edges #{opts.max_edges} " if opts.max_edges
   assemble << "-b #{opts.bubble_remove} " if opts.bubble_remove
   assemble << "-d #{opts.max_diff} " if opts.max_diff
   assemble << "-g #{opts.max_gap_diff} " if opts.max_gap_diff
