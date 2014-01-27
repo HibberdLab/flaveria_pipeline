@@ -20,8 +20,8 @@ required = {
 }
 
 threads = 22
-memory = 90
-maximum_files_to_hammer_at_a_time = 6
+memory = 92
+maximum_files_to_hammer_at_a_time = 5
 fastqc_path = "/applications/fastqc_v0.10.1/FastQC/fastqc"
 hammer_path = "~/apps/SPAdes-2.5.1-Linux/bin/spades.py"
 trimmomatic_path = "/home/cmb211/apps/Trimmomatic-0.32/trimmomatic-0.32.jar"
@@ -291,18 +291,23 @@ file required[:khmered_reads] => required[:corrected_reads] do
   
   # interleave the corrected fastq files together into #{path} with a .in suffix
   interleaved_files=[]
+  interleave_out = path
   filelist.each_slice(2) do |pair|
     left = pair[0]
     right = pair[1]
     puts "interleaving #{File.basename(left)} and #{File.basename(right)}"
     base = File.basename(left)
     cmd = "paste #{left} #{right} | paste - - - - | "
-    cmd << " awk -v FS=\"\t\" -v OFS=\"\n\" \'{print(\"@read\"NR\":1\",$3,$5,$7,\"@read\"NR\":2\",$4,$6,$8)}\' > #{path}/#{base}.in"
-    if !File.exists?("#{path}/#{base}.in")
+    cmd << " awk -v FS=\"\t\" -v OFS=\"\n\" \'{print(\"@read\"NR\":1\",$3,$5,$7,\"@read\"NR\":2\",$4,$6,$8)}\' > #{interleave_out}/#{base}.in"
+    if !File.exists?("#{interleave_out}/#{base}.in")
       # puts cmd
       `#{cmd}`
     end
-    interleaved_files << "#{path}/#{base}.in"
+    interleaved_files << "#{interleave_out}/#{base}.in"
+    # rm1 = "rm #{File.basename(left)}"
+    # rm2 = "rm #{File.basename(right)}"
+    # `#{rm1}`
+    # `#{rm2}`
   end
 
   # settings for khmer

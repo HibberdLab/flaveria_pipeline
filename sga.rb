@@ -41,7 +41,7 @@
 require 'trollop'
 
 opts = Trollop::options do
-  version "v0.0.2"
+  version "v0.0.3"
   opt :left, "Left input fastq file ", :required => true, :type => String
   opt :right, "Right input fastq file", :required => true, :type => String
   opt :output, "Output name", :required => true, :type => String
@@ -69,7 +69,7 @@ opts = Trollop::options do
   opt :rmdup_error_rate, "the maximum error rate allowed to consider two sequences identical (default: exact matches required)", :default => 0.0, :type => :float # -e
 
   # overlap
-  opt :error_rate, "the maximum error rate allowed to consider two sequences aligned ", :default => 0.0, :type => :float # -e
+  opt :overlap_error_rate, "the maximum error rate allowed to consider two sequences aligned ", :default => 0.0, :type => :float # -e
   opt :min_overlap, "minimum overlap required between two reads", :default => 45, :type => :int # -m
   opt :exhaustive, "output all overlaps, including transitive edges" # yes/no # -x
   opt :seed_length, "force the seed length to be LEN. By default, the seed length in the overlap step is calculated to guarantee all overlaps with --error-rate differences are found.  This option removes the guarantee but will be (much) faster. As SGA can tolerate some missing edges, this option may be preferable for some data sets.", :type => :int # -l
@@ -194,7 +194,7 @@ if !File.exists?("#{path}/#{paired}.merged.rmdup.asqg.gz")
   banner "OVERLAP"
   overlap = "#{opts.sga} overlap "
   overlap << "-t #{opts.cores} "
-  overlap << "-e #{opts.error_rate} " if opts.error_rate
+  overlap << "-e #{opts.overlap_error_rate} " if opts.error_rate
   overlap << "-m #{opts.min_overlap} " if opts.min_overlap
   overlap << "-x " if opts.exhaustive
   overlap << "-l #{opts.seed_length} " if opts.seed_length

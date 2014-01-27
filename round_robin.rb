@@ -76,7 +76,7 @@ round robin annotation:
 the idea is the more you have to annotate the better it gets
 
 author: Chris Boursnell (cmb211@cam.ac.uk)
-ideas and help: Richard X Smith (rds45@cam.ac.uk)
+ideas and help: Richard X Smith-Unna (rds45@cam.ac.uk)
 
 
 EOS
@@ -95,8 +95,6 @@ list.each do |file|
     abort "Can't find #{file}"
   end
 end
-
-# p list
 
 cpu = 7
 nodes = Hash.new
@@ -149,28 +147,16 @@ list.each do |file_query|
     end
   end
 
+  # scan output reciprocal hit files 
   list.each do |file_target|
     if file_query != file_target
       query_name = File.basename(file_query).split(".").first
       target_name = File.basename(file_target).split(".").first
-      puts "Doing rbusearch of #{file_query} against #{file_target}"
       dir_output = "#{query_name}_into_#{target_name}"
       Dir.chdir(dir_output) do |dir|
         File.open("reciprocal_hits.txt").each_line do |line|
           cols = line.split("\t")
           hit = Hit.new(cols,query_name, target_name)
-        
-          # here we create 2 nodes based on the query_name
-          # and the target_name, and then create an edge
-          # # going from query to target
-          # name1 = "#{hit.query}"
-          # name2 = "#{hit.target}"
-          # node1 = Node.new(name1, nil, nil)
-          # node2 = Node.new(name2, nil, nil)
-          # nodes << node1
-          # nodes << node2
-          # g.add_edge(node1, node2)
-
 
           name1 = "#{hit.query}"
           name2 = "#{hit.target}"
@@ -189,13 +175,13 @@ list.each do |file_query|
           end
 
           g.add_edge(node1, node2)
-
         end
       end
     end
   end
 end
 
+# cascade best annotations through the graph
 (1..list.length).each do |iteration|
   nodes.each_pair do |name,node|
     if node.agi == nil
@@ -220,7 +206,7 @@ nodes.each_pair do |name, node|
   if !annotation.has_key?(species)
     annotation[species]=Hash.new
   end
-  agi = node.agi.split(":").last if node.agi!=nil
+  agi = node.agi.split(":").last if node.agi != nil
   annotation[species][contig]=agi
 end
 
@@ -229,3 +215,4 @@ annotation.each_pair do |species, hash2|
     puts "#{species}\t#{contig}\t#{agi}"
   end
 end
+
