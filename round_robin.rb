@@ -210,6 +210,7 @@ nodes.each_pair do |name, node|
   annotation[species][contig]=agi
 end
 
+# need to make the output a bit better - TODO [ ]
 annotation.each_pair do |species, hash2|
   hash2.each_pair do |contig, agi|
     puts "#{species}\t#{contig}\t#{agi}"

@@ -1,19 +1,19 @@
 require 'bio'
 
 required = {
-  :combined_assembly => "combined_assembly",
+  :input_reads => "raw_data",
+  :quality => "quality_check",
+  :trimmed_reads => "trimmed_reads",
+  :yaml => "datasets",
+  :corrected_reads => "corrected_reads",
+  :single_corrected_reads => "single_corrected_reads",
+  :hammer_log => "hammer.log",
+  :khmered_reads => "khmered_reads",
+  :config => "soapdt.config",
   :soap_output => "soap_output",
   :sga_output => "sga_output",
   :idba_output => "idba_output",
-  :quality => "quality_check",
-  :input_reads => "raw_data",
-  :trimmed_reads => "trimmed_reads",
-  :corrected_reads => "corrected_reads",
-  :hammer_log => "hammer.log",
-  :single_corrected_reads => "single_corrected_reads",
-  :yaml => "datasets",
-  :config => "soapdt.config",
-  :khmered_reads => "khmered_reads",
+  :combined_assembly => "combined_assembly",
   :annotation_output => "annotation_summary",
   :expression_output => "expression_output",
   :bowtie_index => "bowtie_index"
@@ -26,9 +26,10 @@ fastqc_path = "/applications/fastqc_v0.10.1/FastQC/fastqc"
 hammer_path = "~/apps/SPAdes-2.5.1-Linux/bin/spades.py"
 trimmomatic_path = "/home/cmb211/apps/Trimmomatic-0.32/trimmomatic-0.32.jar"
 khmer_path = "/home/cmb211/.local/bin/normalize-by-median.py"
-protein_reference = "/home/cmb211/flaveria/at.faa"
+protein_reference = "/home/cmb211/flaveria/at_p.faa"
 idba = "/home/cmb211/apps/idba_tran-1.0.13/bin/idba_tran"
 cd_hit_est = "/home/cmb211/apps/cd-hit-v4.6.1-2012-08-27/cd-hit-est"
+gapcloser = "/home/cmb211/bin/GapCloser"
 lcs = ""
 path = ""
 
@@ -406,21 +407,31 @@ file required[:soap_output] => required[:khmered_reads] do
   soap_cmd = "SOAPdenovo-Trans-127mer all -s #{required[:config]} -o #{path}/soap/#{lcs}soap -p #{threads}"
   puts soap_cmd
   `#{soap_cmd}`
-  # if File.exists?("#{path}/soap/#{lcs}soap.scafSeq") # if soap seg faulted try running without the single reads
-  #   cmd = "grep -v \"q=\" #{required[:config]} > tmp"
-  #   puts cmd
-  #   cmd2 = "mv tmp #{required[:config]}"
-  #   puts cmd2
-  #   # then run soap_cmd again
-  #   `#{soap_cmd}`
-  #   abort "running soap again without the single reads because it seg faulted... :("
-  # end
+
+  # run soap gapcloser on scafseq
+  gapcloser_cmd = "#{gapcloser} -a #{path}/soap/#{lcs}soap.scafSeq -b soapdt.config -o #{path}/soap/#{lcs}soap.gapcloser.fasta" # GapCloser -a Ft_soap.scafSeq -b soapdt.config -o Ft_soap.filled.fasta -l 101
+  puts gapcloser_cmd
+  `#{gapcloser_cmd}`
+
+  # run sga gap filler on *.scafSeq
+  pre_cmd =     "sga preprocess -p 1 -o #{path}/soap/#{lcs}cleaned.fastq #{path}/#{lcs}.left.fastq #{path}/#{lcs}.right.fastq" 
+  index_cmd =   "sga index -p #{path}/soap/#{lcs} -t #{threads} -a ropebwt #{path}/soap/#{lcs}cleaned.fastq"
+  gapfill_cmd = "sga gapfill -p #{path}/soap/#{lcs} -e 47 -x 1 -t #{threads} -o #{path}/soap/#{lcs}soap.gapfill.fasta #{path}/soap/#{lcs}soap.gapcloser.fasta"
+
+  puts pre_cmd
+  `#{pre_cmd}`
+
+  puts index_cmd
+  `#{index_cmd}`
+
+  puts gapfill_cmd
+  `#{gapfill_cmd}`
 
   # make a histogram of the lengths of the contigs in the output assembly file
   #
-  if File.exists?("#{path}/soap/#{lcs}soap.scafSeq") # soapdtgraph.scafSeq
-    abort "soap assembly file is empty!" if File.zero?("#{path}/soap/#{lcs}soap.scafSeq")
-    contigs = Bio::FastaFormat.open("#{path}/soap/#{lcs}soap.scafSeq")
+  if File.exists?("#{path}/soap/#{lcs}soap.gapfill.fasta") # soapdtgraph.scafSeq
+    abort "soap assembly file is empty!" if File.zero?("#{path}/soap/#{lcs}soap.gapfill.fasta")
+    contigs = Bio::FastaFormat.open("#{path}/soap/#{lcs}soap.gapfill.fasta")
     histogram = {}
     contigs.each do |entry|
       bucket = (entry.seq.length*0.01).round
@@ -517,9 +528,8 @@ file required[:idba_output] => required[:khmered_reads] do
   idba_cmd << "--step 4 "                           # increment of k-mer of each iteration
   idba_cmd << "--min_count 1 "                      # minimum multiplicity for filtering k-mer when building the graph
   idba_cmd << "--no_correct "                       # do not do correction
-  idba_cmd << "--max_isoforms 6"                    # maximum number of isoforms
-  idba_cmd << "--similar 0.95"                      # similarity for alignment
-
+  idba_cmd << "--max_isoforms 6 "                   # maximum number of isoforms
+  idba_cmd << "--similar 0.98"                      # similarity for alignment
 
   puts idba_cmd
   `#{idba_cmd}`
@@ -553,7 +563,7 @@ end
 file required[:combined_assembly] do
   puts "combining outputs from soap, sga and idba and running cd-hit-est"
 
-  soap = "#{path}/soap/#{lcs}soap.scafSeq"
+  soap = "#{path}/soap/#{lcs}soap.gapfill.fasta" 
   sga = "#{path}/sga/#{lcs}sga.assemble-contigs.fa"
   idba = "#{path}/idba/contig.fa"
 
