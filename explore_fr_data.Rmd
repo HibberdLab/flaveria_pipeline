@@ -1,0 +1,173 @@
+Flaveria bidentis eXpress data exploration
+========================================================
+
+Load the data
+
+```{r}
+library('ggplot2')
+library('gplots')
+library('reshape2')
+setwd('~/hydrogen/flaveria/Fr/Fr_2/')
+data_tpm <- read.csv('Fr_express.tpm', sep="\t", head=T)
+```
+
+## TPM
+
+Correlation matrix
+
+```{r fig.width=12, fig.height=12}
+tpms <- data_tpm[,3:20]
+names(tpms) <- gsub(names(tpms), pattern="([0-9])\\.([0-9])", replacement="\\2.\\1")
+c <- melt(cor(tpms))
+p <- ggplot(data=c, aes_string(x=names(c)[1], y=names(c)[2], fill="value")) +
+  geom_tile() +
+  geom_text(aes(label = round(value, 2))) +
+  xlab('') +
+  ylab('')
+p
+
+```
+
+Expression Density Plot
+
+```{r fig.width=12, fig.height=12}
+tpms_melt <- melt(tpms)
+tpms_melt$value[tpms_melt$value < 0.01] <- 0
+tpms_melt$stage <- gsub(tpms_melt$variable, pattern="\\.[0-9]", replacement="")
+
+ggplot(tpms_melt, aes(x=log(value), group=stage, colour=stage)) + geom_density()
+```
+
+Heatmap
+
+```{r fig.width=12, fig.height=12}
+plotheatmap <- function(counts) {
+  dists <- dist(t(as.matrix(tpms)))
+  mat <- as.matrix(dists)
+  print(heatmap.2(mat, trace="none"))
+}
+plotheatmap()
+```
+
+## Effective counts
+
+```{r fig.width=12, fig.height=12}
+data_counts <- read.csv('Fr_express.eff_count', sep="\t", head=T)
+library(EBSeq)
+library(DESeq)
+#` Remove any rows containing all-zeros
+remove_zero_rows <- function(df) {
+  df[apply(df, 1, function(x) !all(x==0)),]
+}
+
+normalise_counts <- function(counts, normfactors) {
+  round(t(t(counts) / normfactors))
+}
+
+counts <- data_counts[,3:20]
+rownames(counts) <- data_counts$contig
+counts <- remove_zero_rows(round(counts))
+cds <- newCountDataSet(counts, condition=rep('a', 18))
+cds <- estimateSizeFactors(cds)
+cds <- counts(cds, normalize=TRUE)
+rownames(cds) <- rownames(counts)
+
+colnames(counts) <- gsub(colnames(counts), pattern="([0-9]).([0-9])", replacement="\\2.\\1")
+plotcountcor <- function(counts) {
+  c <- melt(cor(counts))
+  p <- ggplot(data=c, aes_string(x=names(c)[1], y=names(c)[2], fill="value")) +
+    geom_tile() +
+    geom_text(aes(label = round(value, 2))) +
+    xlab('') +
+    ylab('')
+  print(p)
+}
+plotcountcor(counts)
+```
+
+
+log count distributions
+```{r fig.width=12, fig.height=12}
+cf <- as.data.frame(counts)
+cf$contig <- rownames(counts)
+counts_melt <- melt(cf, id='contig')
+ggplot(counts_melt, aes(x=log(value), colour=variable)) + geom_density()
+ggplot(counts_melt, aes(x=variable, y=value, colour=variable)) + geom_boxplot()
+```
+
+plot distribution of counts over 50,000
+```{r fig.width=12, fig.height=12}
+counts_50k <- counts_melt[counts_melt$value > 50000,]
+ggplot(counts_50k, aes(x=variable, y=value, colour=variable)) + geom_boxplot()
+```
+
+there are some high counts distorting the distributions - let's remove those rows for the purposes of checking how good replication is for the majority of genes
+```{r fig.width=12, fig.height=12}
+high_contigs <- unique(counts_50k[which(counts_50k$value > 2e+05),]$contig)
+fixed_tpm <- data_tpm[-which(data_tpm$contig %in% high_contigs),]
+names(fixed_tpm) <- gsub(names(fixed_tpm), pattern="([0-9]).([0-9])", replacement="\\2.\\1")
+tpms <- fixed_tpm[,3:20]
+rownames(tpms) <- fixed_tpm$contig
+plotcountcor(tpms)
+```
+
+we can also use a correlation metric less sensitive to outliers
+```{r fig.width=12, fig.height=12}
+
+plotcountspearman <- function(counts) {
+  c <- cor(counts, method="spearman")
+  c <- melt(c)
+  c <- c[-which(c$value==1),]
+  p <- ggplot(data=c, aes_string(x=names(c)[1], y=names(c)[2], fill="value")) +
+    geom_tile() +
+    geom_text(aes(label = round(value, 2))) +
+    xlab('') +
+    ylab('')
+  print(p)
+}
+plotcountspearman(tpms)
+```
+
+looking better - Fr_2.3 is no longer completely different in the pearson correlation, but Fb1.1 is still looking wrong in the spearman.
+
+Just re-checking the distributions aggregated by sample...
+```{r fig.width=12, fig.height=12}
+tpms_melt <- melt(tpms)
+tpms_melt$value[tpms_melt$value < 0.01] <- 0
+tpms_melt$stage <- gsub(tpms_melt$variable, pattern="\\.[0-9]", replacement="")
+ggplot(tpms_melt, aes(x=log(value), group=stage, colour=stage)) + 
+  geom_density()
+```
+
+and not aggregated...
+```{r fig.width=12, fig.height=12}
+ggplot(tpms_melt, aes(x=log(value), group=variable, colour=stage)) + 
+  geom_density() + scale_colour_brewer(type="qual", palette=6)
+```
+
+we probably should re-normalise TPMs within each column since we removed the highest rows
+```{r fig.width=12, fig.height=12}
+print(apply(tpms, 2, sum))
+renorm <- function(x)  {
+  x = (x / sum(x)) * 1e6
+}
+tpms_rn <- as.data.frame(apply(tpms, 2, renorm))
+print(apply(tpms_rn, 2, sum))
+```
+
+and one more correlation plot check...
+```{r fig.width=12, fig.height=12}
+plotcountcor(tpms_rn)
+plotcountspearman(tpms_rn)
+```
+
+maybe the chloroplast genes are causing the problem - if chloroplasts were highly expressing or were captured at higher rates in one replicate's extractions, that could lead to broken correlations
+```{r fig.width=12, fig.height=12}
+chloro <- read.csv('Fr_chloro_contigs.txt', head=F)
+names(chloro)[1] <- 'contig'
+nc_tpms <- fixed_tpm[-which(fixed_tpm$contig %in% chloro$contig),]
+tpms <- nc_tpms[,3:20]
+rownames(tpms) <- nc_tpms$contig
+tpms_rn <- as.data.frame(apply(tpms, 2, renorm))
+plotcountcor(tpms_rn)
+```

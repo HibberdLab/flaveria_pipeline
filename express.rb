@@ -156,35 +156,37 @@ if opts.annotations
 end
 
 puts "writing output"
-output = File.open("#{opts.path}/#{opts.output}", "w")
-output.write("contig\tlength\t")
+
+eff_counts_output = File.open("#{opts.path}/#{opts.output}.eff_count", "w")
+tpm_output = File.open("#{opts.path}/#{opts.output}.tpm", "w")
+
+eff_counts_output.write("contig\tlength\t")
+tpm_output.write("contig\tlength\t")
+
 left.keys.each do |section|
-  output.write("#{section}\t")
+  eff_counts_output.write("#{opts.prefix}#{section}\t")
+  tpm_output.write("#{opts.prefix}#{section}\t")
 end
-output.write("t1\tt2\tt3\tt3\tt4\tt5\tt6")
-output.write("\n")
+eff_counts_output.write("\n")
+tpm_output.write("\n")
 
 expression_hash.each_pair do |contig, hash|
   if opts.annotations && annotation_hash.has_key?(contig)
-    output.write("#{contig}_#{annotation_hash[contig]}\t")
+    eff_counts_output.write("#{contig}_#{annotation_hash[contig]}\t")
+    tpm_output.write("#{contig}_#{annotation_hash[contig]}\t")
   else
-    output.write("#{contig}\t")
+    eff_counts_output.write("#{contig}\t")
+    tpm_output.write("#{contig}\t")
   end
-  output.write("#{hash[left.keys[0]].length}\t")
-  # totals = [] # TODO fill 0-5 with zeros
-  totals = [0,0,0,0,0,0]
+  eff_counts_output.write("#{hash[left.keys[0]].length}\t")
+  tpm_output.write("#{hash[left.keys[0]].length}\t")
+
   hash.each_pair do |section, data|
-    (rep, leaf_section) = section.to_s.split("-")
-    totals[leaf_section.to_i-1] += data.tpm
-    output.write("#{data.eff_counts}\t") # TPM
+    eff_counts_output.write("#{data.eff_counts}\t")          # # Effective counts
+    tpm_output.write("#{data.tpm}\t")          # TMP
   end
-  totals.each do |i|
-    if i!=nil
-      output.write("#{i/3}\t") 
-    else
-      output.write("0.0\t")
-    end
-  end
-  output.write("\n")
+
+  eff_counts_output.write("\n")
+  tpm_output.write("\n")
 end
 puts "Done"
