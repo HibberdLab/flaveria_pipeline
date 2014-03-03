@@ -173,12 +173,14 @@ puts cd_cmd if opts.verbose
 
 ## RBUSEARCH   # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
-cmd = "ruby rbusearch.rb --query #{opts.path}/#{opts.prefix}contigs.fasta --target #{protein_reference} --output #{opts.path}/rbusearch --cores #{threads} --prefix #{opts.prefix} --verbose"
-puts cmd if opts.verbose
-`#{cmd}` if !opts.test
+# use the round robin annotation script before doing eXpress 
 
-cmd = "mv #{opts.path}/rbusearch/#{opts.prefix}annotated.fasta #{opts.path}/#{opts.prefix}annotated.fasta"
-`#{cmd}` if !opts.test
+# cmd = "ruby rbusearch.rb --query #{opts.path}/#{opts.prefix}contigs.fasta --target #{protein_reference} --output #{opts.path}/rbusearch --cores #{threads} --prefix #{opts.prefix} --verbose"
+# puts cmd if opts.verbose
+# `#{cmd}` if !opts.test
+
+# cmd = "mv #{opts.path}/rbusearch/#{opts.prefix}annotated.fasta #{opts.path}/#{opts.prefix}annotated.fasta"
+# `#{cmd}` if !opts.test
 
 ## EXPRESS # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 

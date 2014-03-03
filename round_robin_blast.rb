@@ -1,12 +1,7 @@
 #!/usr/bin/env ruby
 
 #
-# recursive round robin
-#
-# this is different from the previous version in the way that the hits are stored
-#
-# now the data from 'reciprocal hits.txt' files is stored in a tree
-#
+# recursive round robin (blast version)
 # 
 #
 
@@ -80,11 +75,11 @@ the idea is the more you have to annotate the better it gets
 author: Chris Boursnell (cmb211@cam.ac.uk)
 ideas and help: Richard X Smith-Unna (rds45@cam.ac.uk)
 
-
 EOS
   opt :reference, "Annotated reference protein fasta file", :required => true, :type => String
-  opt :list, "List of nucleotide fasta files to annotate", :required => true, :type => String
+  opt :list, "File containing list of nucleotide fasta files to annotate", :required => true, :type => String
   opt :threads, "Threads", :required => true, :type => :int
+  opt :output, "Final annotation output file", :required => true, :type => String
   opt :test, "Don't actually do anything"
   opt :verbose, "Be Verbose"
 end
@@ -103,34 +98,36 @@ end
 cpu = opts.threads
 nodes = Hash.new
 g = RGL::DirectedAdjacencyGraph.new
-rbusearch = "/home/cmb211/scripts/flaveria_pipeline/rbusearch.rb"
+# rbusearch = "/home/cmb211/scripts/flaveria_pipeline/rbusearch.rb"
+rbblast = "/home/cmb211/scripts/flaveria_pipeline/rbblast.rb"
 
 # run rbusearch
 list.each do |file_query|
-  $stderr.puts "Doing rbusearch on #{file_query} against #{opts.reference}"
+  $stderr.puts "Doing rbblast on #{file_query} against #{opts.reference}"
   dir_output = "#{(File.basename(file_query)).split(".").first}_into_#{(File.basename(opts.reference)).split(".").first}"
 
-  query = File.basename(file_query).split(".").first    
-  rbu_cmd = "ruby #{rbusearch} "
+  query = File.basename(file_query).split(".").first
+  rbu_cmd = "ruby #{rbblast} "
   rbu_cmd << "--query #{file_query} --target #{opts.reference} --output #{dir_output} "
-  rbu_cmd << "--databases . --prefix #{query} --cores #{cpu} --nofasta"
+  rbu_cmd << " --prot --cores #{cpu} --nofasta --verbose"
   puts rbu_cmd if opts.verbose
   `#{rbu_cmd}` if !opts.test
 
   list.each do |file_target|
     if file_query != file_target
-      $stderr.puts "Doing rbusearch of #{file_query} against #{file_target}"
+      $stderr.puts "Doing rbblast of #{file_query} against #{file_target}"
       dir_output = "#{(File.basename(file_query)).split(".").first}_into_#{(File.basename(file_target)).split(".").first}"
       query = File.basename(file_query).split(".").first
-      rbu_cmd = "ruby #{rbusearch} "
-      rbu_cmd << "--query #{file_query} --target #{file_target} --target-nucl --output #{dir_output} "
-      rbu_cmd << "--databases . --prefix #{query} --cores #{cpu} --nofasta"
+      rbu_cmd = "ruby #{rbblast} "
+      rbu_cmd << "--query #{file_query} --target #{file_target} --nucl --output #{dir_output} "
+      rbu_cmd << " --cores #{cpu} --nofasta --verbose"
       puts rbu_cmd if opts.verbose
-      # `#{rbu_cmd}` if !opts.test
+      `#{rbu_cmd}` if !opts.test
     end
   end
 end
-exit
+
+# edges = File.open("edges.txt", "w")
 # scan output reciprocal hits files
 list.each do |file_query|
   query_name = File.basename(file_query).split(".").first
@@ -138,7 +135,9 @@ list.each do |file_query|
   dir_output = "#{query_name}_into_#{target_name}"
   Dir.chdir(dir_output) do |dir|
     if File.exists?("reciprocal_hits.txt")
+      puts "opening #{dir_output}" if opts.verbose
       File.open("reciprocal_hits.txt").each_line do |line|
+
         cols = line.split("\t")
         hit = Hit.new(cols,query_name, target_name)
 
@@ -146,15 +145,31 @@ list.each do |file_query|
         # and specify the AGI of the node based on the
         # target_name
         name = "#{hit.query}"
+
         if !nodes.has_key?(name)
           node = Node.new(name, hit.target, hit.bitscore)
+          # if line =~ /AT5G49560/ or line=~/spinosa_00056/
+          #   puts "line: #{line}"
+          #   puts "hit:  #{hit}"
+          #   puts "name: #{name}"
+          #   puts "node: #{node}"
+          # end
           nodes[name]=node
+        else
+          if nodes[name].agi == nil
+            nodes[name].agi = hit.target
+            nodes[name].bitscore = hit.bitscore
+            # puts "setting node #{name} agi to #{hit.target} and bitscore to #{hit.bitscore}" if name =~ /spinosa_00056/
+          else
+            puts "this shouldn't happen"
+          end
         end
       end
     end
   end
 
   # scan output reciprocal hit files 
+
   list.each do |file_target|
     if file_query != file_target
       query_name = File.basename(file_query).split(".").first
@@ -162,28 +177,41 @@ list.each do |file_query|
       dir_output = "#{query_name}_into_#{target_name}"
       Dir.chdir(dir_output) do |dir|
         if File.exists?("reciprocal_hits.txt")
+          puts "opening #{dir}" if opts.verbose
           File.open("reciprocal_hits.txt").each_line do |line|
             cols = line.split("\t")
             hit = Hit.new(cols,query_name, target_name)
 
             name1 = "#{hit.query}"
             name2 = "#{hit.target}"
+            # if name1 =~ /spinosa_00056/
+            #   puts "name1:"
+            #   puts "line: #{line}"
+            # end
+            # if name2 =~ /spinosa_00056/
+            #   puts "name2:"
+            #   puts "line: #{line}"
+            # end
+
             node1 = Node.new(name1, nil, nil)
             node2 = Node.new(name2, nil, nil)
             if nodes.has_key?(name1)
               node1 = nodes[name1]
             else
-              nodes[name1]=node1
+              nodes[name1] = node1
             end
 
             if nodes.has_key?(name2)
               node2 = nodes[name2]
             else
-              nodes[name2]=node2
+              nodes[name2] = node2
             end
 
             g.add_edge(node1, node2)
             # TODO add these edges to a csv file for visualisation
+            # if node1.name == "C.spinosa_00056" or node2.name == "C.spinosa_00056" or node1.name == "AT5G49560.1" or node2.name == "AT5G49560.1" or node1.name == "AT4G36630.1" or node2.name == "AT4G36630.1"
+            # edges.write("#{node1.name}\t#{node1.bitscore}\t#{node1.agi}\t#{node2.name}\t#{node2.bitscore}\t#{node2.agi}\n")
+            # end
           end
         end
       end
@@ -192,7 +220,13 @@ list.each do |file_query|
 end
 
 # cascade best annotations through the graph
+puts "cascading best annotations through the graph" if opts.verbose
 (1..list.length).each do |iteration|
+  File.open("nodes-#{iteration}.txt", "w") do |io|
+    nodes.each_pair do |name, node|
+      io.write("#{node.name}\t#{node.agi}\t#{node.bitscore}\n")
+    end
+  end
   nodes.each_pair do |name,node|
     if node.agi == nil
       neighbours = g.adjacent_vertices(node)
@@ -204,7 +238,7 @@ end
           bitscore=n.bitscore
         end
       end
-      node.agi = agi
+      node.agi = agi 
       node.bitscore = bitscore
     end
   end
@@ -217,13 +251,17 @@ nodes.each_pair do |name, node|
     annotation[species]=Hash.new
   end
   agi = node.agi.split(":").last if node.agi != nil
-  annotation[species][contig]=agi
+  annotation[species][contig]=agi if agi != "" and agi!=nil
 end
 
 # need to make the output a bit better - TODO [ ]
+
+output=""
 annotation.each_pair do |species, hash2|
   hash2.each_pair do |contig, agi|
-    puts "#{species}\t#{contig}\t#{agi}"
+    output << "#{species}\t#{contig}\t#{agi}\n"
   end
 end
+puts "writing output to #{opts.output}" if opts.verbose
+File.open("#{opts.output}", "w") {|io| io.write(output)}
 

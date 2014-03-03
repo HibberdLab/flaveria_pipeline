@@ -105,6 +105,7 @@ file required[:quality] => required[:input_reads] do
 end
 
 file required[:trimmed_reads] => required[:input_reads] do
+  # TODO add aligning reads against chloroplast and rRNA datasets to remove these reads
   puts "creating trimmed reads..."
   trim_threads = threads > 4 ? 4 : threads
   trim_batch_cmd = "ruby trim-batch.rb "
@@ -525,7 +526,7 @@ file required[:idba_output] => required[:khmered_reads] do
   idba_cmd << "--num_threads #{threads} "           # number of threads
   idba_cmd << "--mink 21 "                          # minimum k value (<=124)
   idba_cmd << "--maxk 77 "                          # maximum k value (<=124)
-  idba_cmd << "--step 4 "                           # increment of k-mer of each iteration
+  idba_cmd << "--step 8 "                           # increment of k-mer of each iteration
   idba_cmd << "--min_count 1 "                      # minimum multiplicity for filtering k-mer when building the graph
   idba_cmd << "--no_correct "                       # do not do correction
   idba_cmd << "--max_isoforms 6 "                   # maximum number of isoforms

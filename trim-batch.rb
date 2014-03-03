@@ -35,6 +35,7 @@ EOS
   opt :single, "A list of colon separated single-end input FASTQ file paths", :type => String
   opt :jar, "Location of the trimmomatic jar file", :required => true, :type => String
   opt :adapters, "Path to adapter FASTA file. If provided, adapters will be trimmed", :type => String
+  opt :phred, "Quality encoding. Either 33 or 64", :type => :int, :required => true
   opt :leading, "Minimum quality required to keep a leading base", :default => 15, :type => Integer
   opt :trailing, "Minimum quality required to keep a trailing base", :default => 15, :type => Integer
   opt :windowsize, "Size of sliding window across which to average quality", :default => 4, :type => Integer
@@ -46,6 +47,8 @@ EOS
   opt :test, "Don't actually run anything"
   opt :verbose, "Be verbose"
 end
+
+Trollop::die :phred,   "must be 33 or 64" if (opts[:phred]!=33 and opts[:phred]!=64) if opts[:phred]
 
 t0 = Time.now
 
@@ -87,17 +90,19 @@ end
 check_list(opts.paired, pairedlist) if opts.paired
 check_list(opts.single, singlelist) if opts.single
 
+phred = "-phred#{opts.phred}"
+
 # build command(s)
 pairedcmd, singlecmd = nil, nil
 
 if opts.paired || opts.pairedfile
-  pairedcmd = "java -jar #{opts.jar} PE -phred33 -threads #{opts.threads} INFILEF INFILER OUTFILEF OUTFILEFU OUTFILER OUTFILERU"
+  pairedcmd = "java -jar #{opts.jar} PE #{phred} -threads #{opts.threads} INFILEF INFILER OUTFILEF OUTFILEFU OUTFILER OUTFILERU"
   pairedcmd += " ILLUMINACLIP:#{opts.adapters}:2:40:15" if opts.adapters
   pairedcmd += " LEADING:#{opts.leading} TRAILING:#{opts.trailing} SLIDINGWINDOW:#{opts.windowsize}:#{opts.quality} MINLEN:#{opts.minlen}"
 end
 
 if opts.single || opts.singlefile
-  singlecmd = "java -jar #{opts.jar} SE -phred33 -threads #{opts.threads} INFILE OUTFILE"
+  singlecmd = "java -jar #{opts.jar} SE #{phred} -threads #{opts.threads} INFILE OUTFILE"
   singlecmd += " ILLUMINACLIP:#{opts.adapters}:2:40:15" if opts.adapters
   singlecmd += " LEADING:#{opts.leading} TRAILING:#{opts.trailing} SLIDINGWINDOW:#{opts.windowsize}:#{opts.quality} MINLEN:#{opts.minlen}"
 end
@@ -165,11 +170,9 @@ singlelist.each do |infile|
 end
 
 datestr = Time.now.strftime('%d_%m_%Y_%H_%M_%S')
-protfile = "#{inpathf}/trim.#{datestr}.protocol"
+protfile = "trim.#{datestr}.protocol"
 puts "Saving protocol to #{protfile}"
-File.open(protfile, 'w') do |protocol|
-  protocol.puts opts
-end
+File.open(protfile, 'w') {|io| io.puts opts }
 
 logsuffix = "#{datestr}.trim.csv"
 def writelog(logarr, logfile)
@@ -183,7 +186,7 @@ def writelog(logarr, logfile)
   end
 end
 
-writelog(paired_trimlog, "#{inpathf}/paired.#{logsuffix}")
-writelog(unpaired_trimlog, "#{inpathf}/unpaired.#{logsuffix}")
+writelog(paired_trimlog, "paired.#{logsuffix}")
+writelog(unpaired_trimlog, "unpaired.#{logsuffix}")
   
 puts "Done! Trimmed #{pairedlist.length + singlelist.length} files in #{Time.now - t0} seconds"
