@@ -1,30 +1,32 @@
-Flaveria bidentis eXpress data exploration
+Flaveria robusta eXpress data exploration
 ========================================================
 
 Load the data
 
 ```{r}
-library('ggplot2')
-library('gplots')
-library('reshape2')
+library(ggplot2)
+library(gplots)
+library(reshape2)
 setwd('~/hydrogen/flaveria/Fr/Fr_2/')
 data_tpm <- read.csv('Fr_express.tpm', sep="\t", head=T)
+data_counts <- read.csv('Fr_express.eff_count', sep="\t", head=T)
 ```
 
 ## TPM
 
 Correlation matrix
 
-```{r fig.width=12, fig.height=12}
+```{r tpm_correlation, fig.width=12, fig.height=12}
 tpms <- data_tpm[,3:20]
 names(tpms) <- gsub(names(tpms), pattern="([0-9])\\.([0-9])", replacement="\\2.\\1")
 c <- melt(cor(tpms))
-p <- ggplot(data=c, aes_string(x=names(c)[1], y=names(c)[2], fill="value")) +
+ggplot(data=c, aes_string(x=names(c)[1], y=names(c)[2], fill="value")) +
   geom_tile() +
+  ggtitle("TPM Correlation Matrix") +
   geom_text(aes(label = round(value, 2))) +
   xlab('') +
   ylab('')
-p
+ggsave("Fr_correlation.tpm.pdf")
 
 ```
 
@@ -36,6 +38,7 @@ tpms_melt$value[tpms_melt$value < 0.01] <- 0
 tpms_melt$stage <- gsub(tpms_melt$variable, pattern="\\.[0-9]", replacement="")
 
 ggplot(tpms_melt, aes(x=log(value), group=stage, colour=stage)) + geom_density()
+ggsave("Fr_density.tpm.pdf")
 ```
 
 Heatmap
@@ -46,16 +49,17 @@ plotheatmap <- function(counts) {
   mat <- as.matrix(dists)
   print(heatmap.2(mat, trace="none"))
 }
+pdf("Fr_heatmap.pdf")
 plotheatmap()
+dev.off()
 ```
 
 ## Effective counts
 
 ```{r fig.width=12, fig.height=12}
-data_counts <- read.csv('Fr_express.eff_count', sep="\t", head=T)
 library(EBSeq)
 library(DESeq)
-#` Remove any rows containing all-zeros
+# Remove any rows containing all-zeros
 remove_zero_rows <- function(df) {
   df[apply(df, 1, function(x) !all(x==0)),]
 }
@@ -77,38 +81,50 @@ plotcountcor <- function(counts) {
   c <- melt(cor(counts))
   p <- ggplot(data=c, aes_string(x=names(c)[1], y=names(c)[2], fill="value")) +
     geom_tile() +
+    ggtitle("Effective Count Correlation matrix") +
     geom_text(aes(label = round(value, 2))) +
     xlab('') +
     ylab('')
   print(p)
 }
+pdf("Fr_correlation.eff.pdf")
 plotcountcor(counts)
+dev.off()
 ```
 
-
 log count distributions
+
 ```{r fig.width=12, fig.height=12}
 cf <- as.data.frame(counts)
 cf$contig <- rownames(counts)
 counts_melt <- melt(cf, id='contig')
 ggplot(counts_melt, aes(x=log(value), colour=variable)) + geom_density()
+ggsave("Fr_density.eff.pdf")
+```
+
+Box plot with outliers
+```{r fig.width=12, fig.height=12}
 ggplot(counts_melt, aes(x=variable, y=value, colour=variable)) + geom_boxplot()
+ggsave("Fr_boxplot.eff.pdf")
 ```
 
 plot distribution of counts over 50,000
 ```{r fig.width=12, fig.height=12}
 counts_50k <- counts_melt[counts_melt$value > 50000,]
 ggplot(counts_50k, aes(x=variable, y=value, colour=variable)) + geom_boxplot()
+ggsave("Fr_boxplot50k.eff.pdf")
 ```
 
 there are some high counts distorting the distributions - let's remove those rows for the purposes of checking how good replication is for the majority of genes
 ```{r fig.width=12, fig.height=12}
 high_contigs <- unique(counts_50k[which(counts_50k$value > 2e+05),]$contig)
-fixed_tpm <- data_tpm[-which(data_tpm$contig %in% high_contigs),]
+fixed_tpm <- data_tpm[-which(data_tpm$contig %in% high_contigs),] # remove highly expressed contigs
 names(fixed_tpm) <- gsub(names(fixed_tpm), pattern="([0-9]).([0-9])", replacement="\\2.\\1")
 tpms <- fixed_tpm[,3:20]
 rownames(tpms) <- fixed_tpm$contig
+pdf("Fr_correlation50k.eff.pdf")
 plotcountcor(tpms)
+dev.off()
 ```
 
 we can also use a correlation metric less sensitive to outliers
@@ -135,24 +151,27 @@ Just re-checking the distributions aggregated by sample...
 tpms_melt <- melt(tpms)
 tpms_melt$value[tpms_melt$value < 0.01] <- 0
 tpms_melt$stage <- gsub(tpms_melt$variable, pattern="\\.[0-9]", replacement="")
-ggplot(tpms_melt, aes(x=log(value), group=stage, colour=stage)) + 
-  geom_density()
+ggplot(tpms_melt, aes(x=log(value), group=stage, colour=stage)) + geom_density()
 ```
 
 and not aggregated...
 ```{r fig.width=12, fig.height=12}
-ggplot(tpms_melt, aes(x=log(value), group=variable, colour=stage)) + 
-  geom_density() + scale_colour_brewer(type="qual", palette=6)
+ggplot(tpms_melt, aes(x=log(value), colour=variable)) + geom_density() 
 ```
 
 we probably should re-normalise TPMs within each column since we removed the highest rows
 ```{r fig.width=12, fig.height=12}
-print(apply(tpms, 2, sum))
+#print(apply(tpms, 2, sum))
 renorm <- function(x)  {
   x = (x / sum(x)) * 1e6
 }
 tpms_rn <- as.data.frame(apply(tpms, 2, renorm))
-print(apply(tpms_rn, 2, sum))
+#print(apply(tpms_rn, 2, sum))
+
+tpms_rn_melt <- melt(tpms_rn)
+tpms_rn_melt$value[tpms_rn_melt$value < 0.01] <- 0
+tpms_rn_melt$stage <- gsub(tpms_rn_melt$variable, pattern="\\.[0-9]", replacement="")
+ggplot(tpms_rn_melt, aes(x=log(value), group=stage, colour=stage)) + geom_density()
 ```
 
 and one more correlation plot check...
@@ -163,11 +182,36 @@ plotcountspearman(tpms_rn)
 
 maybe the chloroplast genes are causing the problem - if chloroplasts were highly expressing or were captured at higher rates in one replicate's extractions, that could lead to broken correlations
 ```{r fig.width=12, fig.height=12}
+setwd('~/hydrogen/flaveria/Fr/Fr_2/')
 chloro <- read.csv('Fr_chloro_contigs.txt', head=F)
 names(chloro)[1] <- 'contig'
-nc_tpms <- fixed_tpm[-which(fixed_tpm$contig %in% chloro$contig),]
+nc_tpms <- fixed_tpm[-which(fixed_tpm$contig %in% chloro$contig),] # intersect
 tpms <- nc_tpms[,3:20]
 rownames(tpms) <- nc_tpms$contig
 tpms_rn <- as.data.frame(apply(tpms, 2, renorm))
 plotcountcor(tpms_rn)
+
+tpms_rn_melt <- melt(tpms_rn)
+tpms_rn_melt$value[tpms_rn_melt$value < 0.01] <- 0
+tpms_rn_melt$stage <- gsub(tpms_rn_melt$variable, pattern="\\.[0-9]", replacement="")
+ggplot(tpms_rn_melt, aes(x=log(value), group=stage, colour=stage)) + geom_density()
+```
+
+Annotation
+```{r fig.width=12, fig.height=12}
+setwd('~/hydrogen/flaveria/Fr/Fr_2/')
+anno <- read.csv('Fr_annotation.txt', head=F, sep='\t')            # load annotation (species, contig, agi)
+key <- read.csv('key_agi.txt', head=F, sep='\t')
+
+names(anno) <- c("species", "contig", "annotation")                # rename column headers
+names(key) <- c("agi", "desc")
+anno_tpm <- merge(data_tpm, anno, by="contig", all=T)              # merge count data and annotation
+
+library(plyr)
+anno_tpm <- anno_tpm[,-c(1, 2, 21, 22)]                            # remove extraneous columns
+anno_tpm <- ddply(anno_tpm, .(annotation), numcolwise(sum))        # sum columns, grouping by annotation
+key_tpm <- anno_tpm[which(anno_tpm$annotation %in% key$agi),]      # print expression tpms for PIN1
+desc_tpm <- merge(key_tpm, key, by.x="annotation", by.y="agi", all=F) # add gene description
+
+write.csv(desc_tpm)
 ```

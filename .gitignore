@@ -27,3 +27,6 @@ expression_output
 rbusearch.rb
 annotation_summary
 combined_assembly
+figure
+*html
+*.md
