@@ -49,9 +49,9 @@ plotheatmap <- function(counts) {
   mat <- as.matrix(dists)
   print(heatmap.2(mat, trace="none"))
 }
-pdf("Fr_heatmap.pdf")
+#pdf("Fr_heatmap.pdf")
 plotheatmap()
-dev.off()
+#dev.off()
 ```
 
 ## Effective counts
@@ -213,5 +213,5 @@ anno_tpm <- ddply(anno_tpm, .(annotation), numcolwise(sum))        # sum columns
 key_tpm <- anno_tpm[which(anno_tpm$annotation %in% key$agi),]      # print expression tpms for PIN1
 desc_tpm <- merge(key_tpm, key, by.x="annotation", by.y="agi", all=F) # add gene description
 
-write.csv(desc_tpm)
+write.csv(desc_tpm, file ="Fr_key_agi.tpm.csv", sep="\t")
 ```

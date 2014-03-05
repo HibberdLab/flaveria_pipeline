@@ -163,3 +163,24 @@ rownames(tpms) <- nc_tpms$contig
 tpms_rn <- as.data.frame(apply(tpms, 2, renorm))
 plotcountcor(tpms_rn)
 ```
+
+
+
+Annotation
+```{r fig.width=12, fig.height=12}
+setwd('~/hydrogen/flaveria/Fb/Fb_2/')
+anno <- read.csv('Fb_annotation.txt', head=F, sep='\t')            # load annotation (species, contig, agi)
+key <- read.csv('key_agi.txt', head=F, sep='\t')
+
+names(anno) <- c("species", "contig", "annotation")                # rename column headers
+names(key) <- c("agi", "desc")
+anno_tpm <- merge(data_tpm, anno, by="contig", all=T)              # merge count data and annotation
+
+library(plyr)
+anno_tpm <- anno_tpm[,-c(1, 2, 21, 22)]                            # remove extraneous columns
+anno_tpm <- ddply(anno_tpm, .(annotation), numcolwise(sum))        # sum columns, grouping by annotation
+key_tpm <- anno_tpm[which(anno_tpm$annotation %in% key$agi),]      # print expression tpms for PIN1
+desc_tpm <- merge(key_tpm, key, by.x="annotation", by.y="agi", all=F) # add gene description
+
+write.csv(desc_tpm, file ="Fr_key_agi.tpm.csv", sep="\t")
+```
