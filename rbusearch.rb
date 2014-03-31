@@ -349,9 +349,7 @@ if __FILE__ == $0
         end
       end
     end
-    # puts "There are : #{reciprocals.keys.length} data points"
-    # puts "There are : #{missed.keys.length} missed data points"
-    # exit
+
     e_data = "cond\tevalue\tlen\n"
     evalues.each do |h|
       e_data << "A\t#{h[:e]}\t#{h[:length]}\n"
@@ -369,7 +367,7 @@ if __FILE__ == $0
     end
    
     fitting=Hash.new
-    (10..15000).each do |centre|
+    (10..15000).each do |centre| # fix this as per rbblast script
       e = 0
       count = 0
       s = centre*0.1

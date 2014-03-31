@@ -130,7 +130,7 @@ list.each do |file_query|
     end
   end
 end
-exit
+
 # scan output reciprocal hits files
 list.each do |file_query|
   query_name = File.basename(file_query).split(".").first
