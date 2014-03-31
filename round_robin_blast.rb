@@ -131,7 +131,7 @@ end
 # scan output reciprocal hits files
 list.each do |file_query|
   query_name = File.basename(file_query).split(".").first
-  target_name = File.basename(opts.reference).split(".").first
+  target_name = File.basename(opts.reference).split(".").first # REFERENCE
   dir_output = "#{query_name}_into_#{target_name}"
   Dir.chdir(dir_output) do |dir|
     if File.exists?("reciprocal_hits.txt")

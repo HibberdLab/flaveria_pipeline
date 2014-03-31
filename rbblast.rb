@@ -109,7 +109,7 @@ elsif opts.prot
   ## nucl -> protein
   ## blastx query into target
   ## tblastn target into query
-  cmd1 = "blastx -query #{opts.query}  -db #{target_name} -out #{opts.output}/#{output1} -evalue 1e-5 -outfmt 6 -num_descriptions 50 -num_alignments 50 -num_threads #{opts.cores}"
+  cmd1 = "blastx  -query #{opts.query} -db #{target_name} -out #{opts.output}/#{output1} -evalue 1e-5 -outfmt 6 -num_descriptions 50 -num_alignments 50 -num_threads #{opts.cores}"
   cmd2 = "tblastn -query #{opts.target} -db #{query_name} -out #{opts.output}/#{output2} -evalue 1e-5 -outfmt 6 -num_descriptions 50 -num_alignments 50 -num_threads #{opts.cores}"
   if !File.exists?("#{opts.output}/#{output1}")
     puts cmd1 if opts.verbose if (!File.exists?("#{opts.output}/#{output1}") and !File.exists?("#{opts.output}/reciprocals_hits.txt"))
@@ -130,7 +130,7 @@ query_results = Hash.new
 target_results = Hash.new
 count=0
 longest=0
-if !File.exists?("#{opts.output}/reciprocal_hits.txt")
+if !File.exists?("#{opts.output}/reciprocal_hits.txt") and !opts.test
   puts "Opening #{output1}" if opts.verbose
   File.open("#{opts.output}/#{output1}").each_line do |line|
     cols = line.chomp.split("\t")

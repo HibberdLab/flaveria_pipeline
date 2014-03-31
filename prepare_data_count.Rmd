@@ -1,0 +1,95 @@
+Preprare Flaveria csv files
+========================================================
+
+
+```{r pringlei}
+setwd("~/hydrogen/flaveria/Fp/Fp_2")
+count <- read.csv("Fp_express.eff_count", sep="\t", head=T)
+key <- read.csv('key_agi.txt',sep='\t', head=F)
+
+setwd('~/hydrogen/flaveria/robin')
+anno <- read.csv('robin_11.txt', sep="\t", head=F)
+names(anno) <- c("species", "contig", "annotation")
+anno$species <- gsub(anno$species, pattern="_200", replacement="")
+
+library(plyr)
+library(reshape2)
+anno <- anno[which(anno$species=="Fp"),]
+
+f_2 <- merge(count, anno, by.x="contig", by.y="contig")
+f_2 <- f_2[,-c(2, 21,22)]
+f_count <- ddply(f_2, .(annotation), numcolwise(sum))        # sum columns, grouping by annotation
+
+setwd("~/hydrogen/flaveria")
+write.table(f_count, file="fp.by_agi.count.csv", sep=",", row.names=FALSE)
+
+```
+
+
+```{r robusta}
+setwd("~/hydrogen/flaveria/Fr/Fr_2")
+count <- read.csv("Fr_express.eff_count", sep="\t", head=T)
+
+setwd('~/hydrogen/flaveria/robin')
+anno <- read.csv('robin_11.txt', sep="\t", head=F)
+names(anno) <- c("species", "contig", "annotation")
+anno$species <- gsub(anno$species, pattern="_200", replacement="")
+
+library(plyr)
+library(reshape2)
+anno <- anno[which(anno$species=="Fr"),]
+
+f_2 <- merge(count, anno, by.x="contig", by.y="contig")
+f_2 <- f_2[,-c(2, 21,22)]
+f_count <- ddply(f_2, .(annotation), numcolwise(sum))        # sum columns, grouping by annotation
+
+setwd("~/hydrogen/flaveria")
+write.table(f_count, file="fr.by_agi.count.csv", sep=",", row.names=FALSE)
+
+```
+
+
+```{r trinervia}
+setwd("~/hydrogen/flaveria/Ft/Ft_2")
+count <- read.csv("Ft_express.eff_count", sep="\t", head=T)
+
+setwd('~/hydrogen/flaveria/robin')
+anno <- read.csv('robin_11.txt', sep="\t", head=F)
+names(anno) <- c("species", "contig", "annotation")
+anno$species <- gsub(anno$species, pattern="_200", replacement="")
+
+library(plyr)
+library(reshape2)
+anno <- anno[which(anno$species=="Ft"),]
+
+f_2 <- merge(count, anno, by.x="contig", by.y="contig")
+f_2 <- f_2[,-c(2, 21,22)]
+f_count <- ddply(f_2, .(annotation), numcolwise(sum))        # sum columns, grouping by annotation
+
+setwd("~/hydrogen/flaveria")
+write.table(f_count, file="ft.by_agi.count.csv", sep=",", row.names=FALSE)
+
+```
+
+
+```{r bidentis}
+setwd("~/hydrogen/flaveria/Fb/Fb_k")
+count <- read.csv("Fb_express.eff_count", sep="\t", head=T)
+
+setwd('~/hydrogen/flaveria/robin')
+anno <- read.csv('robin_11.txt', sep="\t", head=F)
+names(anno) <- c("species", "contig", "annotation")
+anno$species <- gsub(anno$species, pattern="_200", replacement="")
+
+library(plyr)
+library(reshape2)
+anno <- anno[which(anno$species=="Fb"),]
+
+f_2 <- merge(count, anno, by.x="contig", by.y="contig")
+f_2 <- f_2[,-c(2, 21,22)]
+f_count <- ddply(f_2, .(annotation), numcolwise(sum))        # sum columns, grouping by annotation
+
+setwd("~/hydrogen/flaveria")
+write.table(f_count, file="fb.by_agi.count.csv", sep=",", row.names=FALSE)
+
+```

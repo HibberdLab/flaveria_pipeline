@@ -24,9 +24,9 @@ khmered_reads
 soapdt.config
 bowtie_index
 expression_output
-rbusearch.rb
 annotation_summary
 combined_assembly
 figure
 *html
 *.md
+*pdf

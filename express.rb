@@ -98,7 +98,7 @@ left.keys.each do |section|
       bowtie_cmd << " -S #{opts.path}/#{opts.prefix}#{section}.sam"
     end
     puts bowtie_cmd if opts.verbose
-    `#{bowtie_cmd}` if !opts.test
+    # `#{bowtie_cmd}` if !opts.test
     if node=="node9"
       mv_cmd = "mv /disk2/tmp/cmb211/#{opts.prefix}#{section}.sam #{opts.path}/#{opts.prefix}#{section}.sam" 
     elsif node=="node8"
@@ -107,7 +107,7 @@ left.keys.each do |section|
       mv_cmd = "echo \"do not have to copy anything\""
     end
     puts mv_cmd if opts.verbose
-    `#{mv_cmd}` if !opts.test
+    # `#{mv_cmd}` if !opts.test
   end
 
   if !File.exists?("#{opts.path}/express_#{opts.prefix}#{section}/results.xprs") # if the eXpress output doesn't exist run eXpress

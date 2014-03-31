@@ -1,0 +1,84 @@
+Comparison of Flaveria trinervia and Flaveria robusta
+========================================================
+
+```{r}
+setwd('~/hydrogen/flaveria/Fr/Fr_2')
+fr <- read.csv('Fr_express.tpm', sep="\t", head=T)
+key <- read.csv('key_agi.txt',sep='\t', head=F)
+names(key) <- c("annotation", "description")
+
+setwd('~/hydrogen/flaveria/Ft/Ft_2')
+ft <- read.csv('Ft_express.tpm', sep="\t", head=T)
+
+setwd('~/hydrogen/flaveria/robin')
+anno <- read.csv('robin_11.txt', sep="\t", head=F)
+names(anno) <- c("species", "contig", "annotation")
+anno$species <- gsub(anno$species, pattern="_200", replacement="")
+```
+
+```{r fig.width=12, fig.height=12}
+library(plyr)
+library(reshape2)
+library(ggplot2)
+fr_anno <- anno[which(anno$species=="Fr"),]
+ft_anno <- anno[which(anno$species=="Ft"),]
+
+fr_2 <- merge(fr, fr_anno, by.x="contig", by.y="contig")
+fr_2 <- fr_2[,-c(2, 21,22)]
+fr_tpm <- ddply(fr_2, .(annotation), numcolwise(sum))        # sum columns, grouping by annotation
+fr_tpm$Fr_1.1 <- fr_tpm$Fr_2.1 # because rep 1-1 in Fr is too small
+
+ft_2 <- merge(ft, ft_anno, by.x="contig", by.y="contig")
+ft_2 <- ft_2[,-c(2, 21,22)]
+ft_tpm <- ddply(ft_2, .(annotation), numcolwise(sum))        # sum columns, grouping by annotation
+names(ft_tpm) <- gsub(names(ft_tpm), pattern="Ft_200_", replacement="Ft_")
+
+key_fr <- fr_tpm[which(fr_tpm$annotation %in% key$annotation),]
+key_ft <- ft_tpm[which(ft_tpm$annotation %in% key$annotation),]
+
+fr_melt <- melt(key_fr)
+ft_melt <- melt(key_ft)
+fr_melt$variable <- gsub(fr_melt$variable, pattern="F[a-z]_[0-9].", replacement="")
+ft_melt$variable <- gsub(ft_melt$variable, pattern="F[a-z]_[0-9].", replacement="")
+
+fr_sum <- ddply(fr_melt, .(annotation,variable), numcolwise(sum))
+ft_sum <- ddply(ft_melt, .(annotation,variable), numcolwise(sum))
+
+both <- merge(fr_sum, ft_sum, by=c("annotation","variable"))
+names(both) <- c("annotation","section","Fr","Ft")
+```
+
+```{r scatter_plot, fig.width=12, fig.height=12}
+# library(grid)
+# agis <- key[which(key$annotation %in% both$annotation),]
+# tmp <- both[which(both$annotation==paste(agis[1,"annotation"])),]
+# ggplot(tmp, aes(x = Fr, y = Ft)) +
+#   geom_point(size = 2) +
+#   geom_path(arrow = arrow(ends="first")) +
+#   xlim(0,400) +
+#   ylim(0,400) +
+#   geom_text(aes(label=section), x=tmp$Fr+3) +
+#   coord_fixed(ratio = 1) +
+#   ggtitle(paste("Trinervia Robusta comparison of ", key[1,1]))
+```
+
+```{r scatter_plot_loop, fig.width=12, fig.height=12}
+setwd("~/Documents/Dropbox/Flaveria/comp_Fr-Ft")
+agis <- key[which(key$annotation %in% both$annotation),]
+
+for (i in 1:nrow(agis)) { # 
+  print(i)
+  tmp <- both[which(both$annotation==paste(agis[i,"annotation"])),]
+  pdf(paste("comp_Fr-Ft_",agis[i,"annotation"],"-",agis[i,"description"],".pdf",sep=""))
+  c<-ggplot(tmp, aes(x = Fr, y = Ft, group=annotation)) +
+    geom_point(size = 2) +
+    geom_path(arrow = arrow(ends="first")) +
+    geom_text(aes(label=section)) +
+    coord_fixed(ratio = 1) +
+    ggtitle(paste("Trinervia Robusta comparison of ", agis[i,"annotation"], " ", agis[i,"description"]))
+  print(c)
+  dev.off()
+}
+
+```
+
